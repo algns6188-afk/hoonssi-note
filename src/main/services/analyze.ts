@@ -30,6 +30,7 @@ const SYSTEM = `당신은 한국 회사의 회의록을 정리하는 비서입�
 
 export async function analyzeMeeting(opts: {
   apiKey: string
+  model: string
   transcript: string
   participants: string[]
   meetingDate: string
@@ -48,11 +49,17 @@ export async function analyzeMeeting(opts: {
     .filter(Boolean)
     .join('\n\n')
 
+  const model = opts.model || 'claude-opus-5-5'
+  // Haiku 는 거절 시 자동 대체(fallback) 기능을 지원하지 않아 Opus/Sonnet 에서만 켭니다.
+  const fallback =
+    model === 'claude-haiku-5-5'
+      ? {}
+      : { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' as const }
+
   const response = await client.beta.messages.parse({
-    model: 'claude-opus-5-5',
+    model,
     max_tokens: 16000,
-    betas: ['server-side-fallback-2026-07-01'],
-    fallbacks: 'default',
+    ...fallback,
     thinking: { type: 'adaptive' },
     output_config: { effort: 'medium', format: betaZodOutputFormat(AnalysisSchema) },
     system: SYSTEM,

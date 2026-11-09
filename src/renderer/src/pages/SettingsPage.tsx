@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { Channel, Settings } from '@shared/types'
+import { CLAUDE_MODELS, TRANSCRIBE_MODELS } from '@shared/types'
 import { errMsg } from '../util'
 
 export default function SettingsPage({ settings, reload }: { settings: Settings; reload(): Promise<void> }): JSX.Element {
@@ -47,12 +48,18 @@ export default function SettingsPage({ settings, reload }: { settings: Settings;
           <input type="password" value={s.openaiKey} onChange={(e) => set('openaiKey', e.target.value)} placeholder="sk-..." />
         </label>
         <label>
+          회의 정리 AI 모델
+          <select value={s.claudeModel} onChange={(e) => set('claudeModel', e.target.value)}>
+            {CLAUDE_MODELS.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+          </select>
+          <span className="muted small">{CLAUDE_MODELS.find((m) => m.id === s.claudeModel)?.cost}</span>
+        </label>
+        <label>
           음성 인식 모델
           <select value={s.transcribeModel} onChange={(e) => set('transcribeModel', e.target.value)}>
-            <option value="whisper-1">whisper-1 (기본)</option>
-            <option value="gpt-4o-transcribe">gpt-4o-transcribe (더 정확)</option>
-            <option value="gpt-4o-mini-transcribe">gpt-4o-mini-transcribe (저렴)</option>
+            {TRANSCRIBE_MODELS.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
           </select>
+          <span className="muted small">{TRANSCRIBE_MODELS.find((m) => m.id === s.transcribeModel)?.cost}</span>
         </label>
         <p className="muted small">키는 이 PC의 보안 저장소로 암호화해 보관합니다.</p>
       </section>

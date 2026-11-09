@@ -80,6 +80,7 @@ function registerIpc(): void {
     const s = await getSettings()
     const analysis = await analyzeMeeting({
       apiKey: s.anthropicKey,
+      model: s.claudeModel,
       transcript: note.meeting!.transcript,
       participants: note.meeting!.participants,
       meetingDate: note.createdAt.slice(0, 10),

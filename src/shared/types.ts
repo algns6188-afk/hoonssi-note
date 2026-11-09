@@ -61,6 +61,7 @@ export interface Settings {
   anthropicKey: string
   openaiKey: string
   transcribeModel: string
+  claudeModel: string
   slackWebhook: string
   teamsWebhook: string
   kakaoAccessToken: string
@@ -72,6 +73,7 @@ export const DEFAULT_SETTINGS: Settings = {
   anthropicKey: '',
   openaiKey: '',
   transcribeModel: 'whisper-1',
+  claudeModel: 'claude-opus-5-5',
   slackWebhook: '',
   teamsWebhook: '',
   kakaoAccessToken: '',
@@ -94,3 +96,17 @@ export interface HoonssiApi {
   send(noteId: string, channels: Channel[]): Promise<Note>
   testChannel(channel: Channel): Promise<string>
 }
+
+/** 설정 화면에 보여 줄 모델 선택지 (1시간 회의 기준 예상 비용, 1달러 = 1,400원 가정) */
+export const CLAUDE_MODELS = [
+  { id: 'claude-opus-5-5', label: 'Claude Opus 5.5 · 가장 정확', cost: '회의 1시간당 약 300원' },
+  { id: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5 · 균형', cost: '회의 1시간당 약 150원' },
+  { id: 'claude-haiku-5-5', label: 'Claude Haiku 5.5 · 가장 저렴', cost: '회의 1시간당 약 10원 (짧은 회의에 적합)' }
+] as const
+
+export const TRANSCRIBE_MODELS = [
+  { id: 'whisper-1', label: 'whisper-1 · 기본', cost: '1시간당 약 500원 (2027년 2월 종료 예정 보도)' },
+  { id: 'gpt-4o-transcribe', label: 'gpt-4o-transcribe · 더 정확', cost: '1시간당 약 500원 (2027년 2월 종료 예정 보도)' },
+  { id: 'gpt-4o-mini-transcribe', label: 'gpt-4o-mini-transcribe · 저렴', cost: '1시간당 약 250원' },
+  { id: 'gpt-transcribe', label: 'gpt-transcribe · 신규 후속 모델', cost: '1시간당 약 380원 (요금은 OpenAI에서 확인 필요)' }
+] as const

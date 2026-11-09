@@ -21,12 +21,20 @@ npm run dist:win   # Windows 설치 파일 만들기 (release 폴더)
 npm run dist:mac   # Mac 설치 파일 만들기 (Mac에서 실행)
 ```
 
+GitHub에 올려 두면 `v0.1.0` 같은 버전 태그를 만들 때마다 Windows·Mac 설치 파일이
+자동으로 만들어져 **Releases** 페이지에 올라갑니다 (`.github/workflows/build.yml`).
+
+> 설치 파일은 아직 코드 서명이 없어서 처음 실행할 때 경고가 뜹니다.
+> - Windows: "Windows의 PC 보호" → **추가 정보** → **실행**
+> - Mac: 앱을 **우클릭 → 열기** (또는 시스템 설정 → 개인정보 보호 및 보안 → "확인 없이 열기")
+
 ## 처음 설정 (설정·연동 메뉴)
 
 | 항목 | 용도 | 받는 곳 |
 |---|---|---|
 | Claude API 키 | 회의 요약·분석 | console.anthropic.com |
 | OpenAI API 키 | 녹음 → 텍스트 변환 | platform.openai.com |
+| AI 모델 선택 | 정확도와 비용 조절 (Opus / Sonnet / Haiku, 음성 인식 모델) | 설정 화면 |
 | Slack 웹훅 | 채널로 결과 전송 | Slack 앱 → Incoming Webhooks |
 | Teams 웹훅 | 채널로 결과 전송 | Teams 채널 → 워크플로 → "웹후크 요청이 수신되면 채널에 게시" |
 | 카카오 액세스 토큰 | 카카오톡 나에게 보내기 | developers.kakao.com (카카오톡 메시지 동의 항목) |
