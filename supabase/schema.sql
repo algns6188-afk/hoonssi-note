@@ -33,6 +33,7 @@ begin
       for each row execute function public.hoonssi_touch()', t);
 
     -- 로그인한 팀원만 읽고 쓸 수 있음 (삭제는 '삭제 표시'로 처리)
+    execute format('grant select, insert, update on public.%I to authenticated', t);
     execute format('alter table public.%I enable row level security', t);
     execute format('drop policy if exists team_select on public.%I', t);
     execute format('drop policy if exists team_insert on public.%I', t);
