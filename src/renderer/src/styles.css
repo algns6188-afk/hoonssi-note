@@ -148,3 +148,14 @@ h3.sub { margin: 20px 0 8px; }
 .grid-table.history tr { cursor: pointer; }
 .grid-table.history tbody tr:hover { background: #f7f9fc; }
 .grid-table.history tr.on { background: var(--brand-soft); }
+
+/* ---------- 공유 서버 ---------- */
+.sync-badge { display: flex; align-items: center; gap: 8px; width: 100%; margin-top: auto; border: 0; background: rgba(255,255,255,.06); color: var(--side-text); font-size: 12px; padding: 8px 10px; text-align: left; }
+.sync-badge + .sidebar-foot { margin-top: 6px; }
+.sync-badge .dot { width: 8px; height: 8px; border-radius: 50%; background: #9aa3b5; flex: none; }
+.sync-badge.ok .dot { background: #34d399; }
+.sync-badge.warn .dot { background: #fbbf24; }
+.sync-badge.bad .dot { background: #f87171; }
+.sync-badge.wait .dot { background: #93c5fd; }
+.login-box { display: flex; flex-direction: column; gap: 8px; background: #f7f9fc; border: 1px solid var(--line); border-radius: 10px; padding: 14px; margin: 8px 0; }
+.login-box h3 { margin: 0 0 4px; }

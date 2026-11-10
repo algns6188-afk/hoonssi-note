@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
-import type { Channel, Settings } from '@shared/types'
+import type { Channel, Settings, SyncStatus } from '@shared/types'
 import { CLAUDE_MODELS, TRANSCRIBE_MODELS } from '@shared/types'
 import { errMsg } from '../util'
 
-export default function SettingsPage({ settings, reload }: { settings: Settings; reload(): Promise<void> }): JSX.Element {
+export default function SettingsPage({ settings, reload, sync }: { settings: Settings; reload(): Promise<void>; sync: SyncStatus | null }): JSX.Element {
   const [s, setS] = useState(settings)
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
   useEffect(() => setS(settings), [settings])
@@ -36,6 +36,8 @@ export default function SettingsPage({ settings, reload }: { settings: Settings;
         <h2>내 정보</h2>
         <label>이름<input value={s.userName} onChange={(e) => set('userName', e.target.value)} placeholder="예: 김훈" /></label>
       </section>
+
+      <ServerSection s={s} set={set} sync={sync} onSave={save} />
 
       <section className="card form">
         <h2>AI 연결</h2>
@@ -104,5 +106,84 @@ export default function SettingsPage({ settings, reload }: { settings: Settings;
         <button className="primary" onClick={save}>저장</button>
       </div>
     </div>
+  )
+}
+
+function ServerSection({ s, set, sync, onSave }: {
+  s: Settings
+  set<K extends keyof Settings>(k: K, v: Settings[K]): void
+  sync: SyncStatus | null
+  onSave(): Promise<void>
+}): JSX.Element {
+  const [email, setEmail] = useState('')
+  const [pw, setPw] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+
+  const run = async (fn: () => Promise<unknown>): Promise<void> => {
+    setBusy(true)
+    setErr(null)
+    try {
+      await fn()
+    } catch (e) {
+      setErr(errMsg(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const state = sync?.state ?? 'off'
+  const label: Record<string, string> = {
+    off: '연결 안 함 (이 PC에만 저장)',
+    login: '로그인이 필요합니다',
+    connecting: '연결 중…',
+    online: '실시간 연결됨',
+    offline: '오프라인 (이 PC에 저장 중, 연결되면 자동 업로드)',
+    error: '서버 설정을 확인해 주세요'
+  }
+
+  return (
+    <section className="card form">
+      <h2>팀 공유 서버</h2>
+      <p className="muted small">연결하면 여러 PC에서 같은 노트·할 일·선수 기록을 실시간으로 함께 씁니다. API 키 같은 설정은 PC마다 따로 입력합니다.</p>
+      <label>
+        서버 주소 <span className="muted small">(Supabase → Project Settings → API → Project URL)</span>
+        <input value={s.serverUrl} onChange={(e) => set('serverUrl', e.target.value)} placeholder="https://xxxx.supabase.co" />
+      </label>
+      <label>
+        공개 키 <span className="muted small">(같은 화면의 anon / publishable key)</span>
+        <input type="password" value={s.serverKey} onChange={(e) => set('serverKey', e.target.value)} placeholder="eyJ... 또는 sb_publishable_..." />
+      </label>
+      <div className="row-actions">
+        <span className={state === 'online' ? 'ok' : state === 'off' ? 'muted' : 'danger'}>
+          ● {label[state]}
+          {sync?.email && ` · ${sync.email}`}
+          {sync && sync.pending > 0 && ` · 올릴 변경 ${sync.pending}건`}
+        </span>
+        <button onClick={() => run(onSave)} disabled={busy}>서버 정보 저장·연결</button>
+      </div>
+      {sync?.message && <p className="muted small">{sync.message}</p>}
+
+      {state === 'login' && (
+        <div className="login-box">
+          <h3>팀 계정으로 로그인</h3>
+          <input placeholder="이메일" value={email} onChange={(e) => setEmail(e.target.value)} />
+          <input type="password" placeholder="비밀번호" value={pw} onChange={(e) => setPw(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && run(() => window.api.syncSignIn(email, pw))} />
+          <button className="primary" disabled={busy || !email || !pw} onClick={() => run(() => window.api.syncSignIn(email, pw))}>
+            {busy ? '로그인 중…' : '로그인'}
+          </button>
+          <p className="muted small">계정은 관리자가 Supabase → Authentication → Users 에서 만들어 줍니다.</p>
+        </div>
+      )}
+      {(state === 'online' || state === 'offline' || state === 'error') && (
+        <div className="row-actions">
+          <button onClick={() => run(() => window.api.syncNow())} disabled={busy}>지금 동기화</button>
+          <button className="ghost" onClick={() => run(() => window.api.syncSignOut())} disabled={busy}>로그아웃</button>
+        </div>
+      )}
+      {sync?.lastSyncAt && <p className="muted small">마지막 동기화: {new Date(sync.lastSyncAt).toLocaleString('ko-KR')}</p>}
+      {err && <div className="error">{err}</div>}
+    </section>
   )
 }

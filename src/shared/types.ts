@@ -52,6 +52,7 @@ export interface Task {
   done: boolean
   sourceNoteId: string | null
   createdAt: string
+  updatedAt?: string
 }
 
 export type Channel = 'slack' | 'teams' | 'kakao'
@@ -66,6 +67,9 @@ export interface Settings {
   teamsWebhook: string
   kakaoAccessToken: string
   autoSend: Record<Channel, boolean>
+  /** 팀 공유 서버 (Supabase) */
+  serverUrl: string
+  serverKey: string
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -77,7 +81,19 @@ export const DEFAULT_SETTINGS: Settings = {
   slackWebhook: '',
   teamsWebhook: '',
   kakaoAccessToken: '',
-  autoSend: { slack: false, teams: false, kakao: false }
+  autoSend: { slack: false, teams: false, kakao: false },
+  serverUrl: '',
+  serverKey: ''
+}
+
+export type SyncState = 'off' | 'login' | 'connecting' | 'online' | 'offline' | 'error'
+
+export interface SyncStatus {
+  state: SyncState
+  email: string | null
+  pending: number
+  lastSyncAt: string | null
+  message: string | null
 }
 
 /** preload 가 window.api 로 노출하는 기능 목록 */
@@ -101,6 +117,12 @@ export interface HoonssiApi {
   listGrowthRecords(athleteId: string): Promise<GrowthRecord[]>
   saveGrowthRecord(r: GrowthRecord): Promise<GrowthRecord>
   savePdf(html: string, defaultName: string): Promise<string | null>
+  syncStatus(): Promise<SyncStatus>
+  syncSignIn(email: string, password: string): Promise<SyncStatus>
+  syncSignOut(): Promise<SyncStatus>
+  syncNow(): Promise<SyncStatus>
+  onSyncStatus(cb: (s: SyncStatus) => void): () => void
+  onDataChanged(cb: () => void): () => void
 }
 
 /** 설정 화면에 보여 줄 모델 선택지 (1시간 회의 기준 예상 비용, 1달러 = 1,400원 가정) */

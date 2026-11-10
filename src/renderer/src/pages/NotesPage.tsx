@@ -38,7 +38,16 @@ export default function NotesPage({ mode, notes, settings, selectedId, onSelect,
 
   // 목록에서 선택이 바뀌면 편집 중인 내용 교체
   useEffect(() => {
-    if (draft && draft.id === selectedId) return
+    if (draft && draft.id === selectedId) {
+      // 다른 PC에서 고친 내용: 이 PC에서 고치는 중이 아니면 새 내용으로 바꿔 보여줌
+      const n = notes.find((x) => x.id === selectedId)
+      if (!n) {
+        setDraft(null)
+        return
+      }
+      if (saveState === 'saved' && n.updatedAt > draft.updatedAt) setDraft(structuredClone(n))
+      return
+    }
     const n = notes.find((x) => x.id === selectedId)
     const fits = n && (mode === 'meetings' ? n.type === 'meeting' : n.type !== 'meeting')
     setDraft(fits ? structuredClone(n) : null)

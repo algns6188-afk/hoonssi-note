@@ -18,7 +18,8 @@ function newAthlete(group: string): Athlete {
 
 function emptyRecord(athleteId: string, month: string): GrowthRecord {
   return {
-    id: uid(), athleteId, month, measures: [],
+    // 같은 선수·같은 달은 어느 PC에서 만들어도 같은 id (중복 방지)
+    id: `${athleteId}_${month}`, athleteId, month, measures: [],
     scores: { accuracy: null, expression: null, jump: null, spin: null },
     condition: '', growth: '', competition: '', nextGoal: '', coachFeedback: '', updatedAt: now()
   }
@@ -63,6 +64,7 @@ export default function AthletesPage(): JSX.Element {
   const reload = async (): Promise<void> => setAthletes(await window.api.listAthletes())
   useEffect(() => {
     reload()
+    return window.api.onDataChanged(() => reload())
   }, [])
 
   const groups = useMemo(
@@ -165,6 +167,12 @@ function ProfileForm({ athlete, groups, onSaved, onDeleted }: {
   })
   useEffect(() => () => void saver.flush(), []) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // 다른 PC에서 고친 내용 반영 (이 PC에서 입력 중이 아닐 때만)
+  useEffect(() => {
+    if (saver.state === '저장됨' && athlete.updatedAt > a.updatedAt) setA(athlete)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [athlete])
+
   const set = <K extends keyof Athlete>(k: K, v: Athlete[K]): void => {
     const next = { ...a, [k]: v }
     setA(next)
@@ -252,6 +260,23 @@ function MonthlyRecord({ athlete }: { athlete: Athlete }): JSX.Element {
       setLoaded(true)
     })
   }, [athlete.id])
+
+  // 다른 PC에서 고친 기록 반영 (이 PC에서 입력 중이 아닐 때만)
+  const stateRef = useRef(saver.state)
+  stateRef.current = saver.state
+  useEffect(
+    () =>
+      window.api.onDataChanged(async () => {
+        const rs = await window.api.listGrowthRecords(athlete.id)
+        setRecords(rs)
+        if (stateRef.current !== '저장됨') return
+        setRec((cur) => {
+          const fresh = rs.find((r) => r.month === cur.month)
+          return fresh && fresh.updatedAt > cur.updatedAt ? fresh : cur
+        })
+      }),
+    [athlete.id]
+  )
 
   // 달을 바꾸면(또는 처음 불러오면) 그 달 기록을 열고, 없으면 빈 기록으로 시작
   useEffect(() => {

@@ -4,6 +4,7 @@ import { join } from 'path'
 import { randomUUID } from 'crypto'
 import type { Athlete, Channel, GrowthRecord, Note, Settings, Task } from '../shared/types'
 import { audioDir, getSettings, repo, saveSettings } from './store'
+import { sync } from './sync'
 import { transcribeNoteAudio } from './services/transcribe'
 import { analyzeMeeting } from './services/analyze'
 import { CHANNEL_LABEL, sendTest, sendToChannel } from './services/send'
@@ -56,7 +57,14 @@ function registerIpc(): void {
   ipcMain.handle('tasks:save', (_e, t: Task) => repo.saveTask(t))
   ipcMain.handle('tasks:delete', (_e, id: string) => repo.deleteTask(id))
   ipcMain.handle('settings:get', () => getSettings())
-  ipcMain.handle('settings:save', (_e, s: Settings) => saveSettings(s))
+  ipcMain.handle('settings:save', async (_e, s: Settings) => {
+    await saveSettings(s)
+    await sync.configure(s)
+  })
+  ipcMain.handle('sync:status', () => sync.getStatus())
+  ipcMain.handle('sync:signIn', (_e, email: string, pw: string) => sync.signIn(email, pw))
+  ipcMain.handle('sync:signOut', () => sync.signOut())
+  ipcMain.handle('sync:now', () => sync.syncNow())
 
   ipcMain.handle('audio:save', async (_e, noteId: string, index: number, data: ArrayBuffer) => {
     if (!/^[\w-]+$/.test(noteId)) throw new Error('잘못된 노트 ID')
@@ -165,10 +173,11 @@ async function sendAll(note: Note, channels: Channel[], s: Settings): Promise<No
   return repo.saveNote(note)
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   registerIpc()
   setupSystemAudioCapture()
   createWindow()
+  sync.init(await getSettings()).catch((e) => console.error('sync init', e))
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })

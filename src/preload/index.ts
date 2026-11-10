@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { HoonssiApi } from '../shared/types'
+import type { HoonssiApi, SyncStatus } from '../shared/types'
 
 const api: HoonssiApi = {
   listNotes: () => ipcRenderer.invoke('notes:list'),
@@ -20,7 +20,21 @@ const api: HoonssiApi = {
   deleteAthlete: (id) => ipcRenderer.invoke('athletes:delete', id),
   listGrowthRecords: (athleteId) => ipcRenderer.invoke('growth:list', athleteId),
   saveGrowthRecord: (r) => ipcRenderer.invoke('growth:save', r),
-  savePdf: (html, name) => ipcRenderer.invoke('pdf:save', html, name)
+  savePdf: (html, name) => ipcRenderer.invoke('pdf:save', html, name),
+  syncStatus: () => ipcRenderer.invoke('sync:status'),
+  syncSignIn: (email, pw) => ipcRenderer.invoke('sync:signIn', email, pw),
+  syncSignOut: () => ipcRenderer.invoke('sync:signOut'),
+  syncNow: () => ipcRenderer.invoke('sync:now'),
+  onSyncStatus: (cb) => {
+    const h = (_e: unknown, s: SyncStatus): void => cb(s)
+    ipcRenderer.on('sync:status', h)
+    return () => ipcRenderer.removeListener('sync:status', h)
+  },
+  onDataChanged: (cb) => {
+    const h = (): void => cb()
+    ipcRenderer.on('data:changed', h)
+    return () => ipcRenderer.removeListener('data:changed', h)
+  }
 }
 
 contextBridge.exposeInMainWorld('api', api)

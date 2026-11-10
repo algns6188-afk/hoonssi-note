@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { Note, Settings, Task } from '@shared/types'
+import type { Note, Settings, SyncStatus, Task } from '@shared/types'
 import { DEFAULT_SETTINGS } from '@shared/types'
 import Dashboard from './pages/Dashboard'
 import NotesPage from './pages/NotesPage'
@@ -24,6 +24,7 @@ export default function App(): JSX.Element {
   const [tasks, setTasks] = useState<Task[]>([])
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS)
   const [openNoteId, setOpenNoteId] = useState<string | null>(null)
+  const [sync, setSync] = useState<SyncStatus | null>(null)
 
   const reload = useCallback(async () => {
     const [n, t, s] = await Promise.all([window.api.listNotes(), window.api.listTasks(), window.api.getSettings()])
@@ -34,6 +35,19 @@ export default function App(): JSX.Element {
 
   useEffect(() => {
     reload()
+    window.api.syncStatus().then(setSync)
+    const offStatus = window.api.onSyncStatus(setSync)
+    // 다른 PC에서 바뀐 내용이 들어오면 화면 새로고침
+    // (설정은 PC마다 따로라서 다시 불러오지 않음 → 설정 화면에서 입력 중인 내용 유지)
+    const offData = window.api.onDataChanged(async () => {
+      const [n, t] = await Promise.all([window.api.listNotes(), window.api.listTasks()])
+      setNotes(n)
+      setTasks(t)
+    })
+    return () => {
+      offStatus()
+      offData()
+    }
   }, [reload])
 
   const openNote = (n: Note): void => {
@@ -59,6 +73,7 @@ export default function App(): JSX.Element {
             </button>
           ))}
         </nav>
+        <SyncBadge status={sync} onClick={() => setPage('settings')} />
         <div className="sidebar-foot">{settings.userName ? `${settings.userName} 님` : '설정에서 이름을 입력하세요'}</div>
       </aside>
       <main className="content">
@@ -76,8 +91,27 @@ export default function App(): JSX.Element {
         )}
         {page === 'tasks' && <TasksPage tasks={tasks} notes={notes} reload={reload} onOpen={openNote} />}
         {page === 'athletes' && <AthletesPage />}
-        {page === 'settings' && <SettingsPage settings={settings} reload={reload} />}
+        {page === 'settings' && <SettingsPage settings={settings} reload={reload} sync={sync} />}
       </main>
     </div>
+  )
+}
+
+function SyncBadge({ status, onClick }: { status: SyncStatus | null; onClick(): void }): JSX.Element | null {
+  if (!status || status.state === 'off') return null
+  const map: Record<string, [string, string]> = {
+    online: ['ok', '실시간 연결됨'],
+    connecting: ['wait', '연결 중…'],
+    offline: ['warn', '오프라인 · 이 PC에 저장 중'],
+    login: ['warn', '로그인 필요'],
+    error: ['bad', '서버 설정 확인 필요']
+  }
+  const [cls, label] = map[status.state] ?? ['wait', status.state]
+  return (
+    <button className={`sync-badge ${cls}`} onClick={onClick} title={status.message ?? ''}>
+      <span className="dot" />
+      {label}
+      {status.pending > 0 && <span className="small"> · 대기 {status.pending}</span>}
+    </button>
   )
 }
