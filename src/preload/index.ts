@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { HoonssiApi, SyncStatus } from '../shared/types'
+import type { HoonssiApi, SyncStatus, UpdateStatus } from '../shared/types'
 
 const api: HoonssiApi = {
   listNotes: () => ipcRenderer.invoke('notes:list'),
@@ -29,6 +29,15 @@ const api: HoonssiApi = {
     const h = (_e: unknown, s: SyncStatus): void => cb(s)
     ipcRenderer.on('sync:status', h)
     return () => ipcRenderer.removeListener('sync:status', h)
+  },
+  appVersion: () => ipcRenderer.invoke('app:version'),
+  updateStatus: () => ipcRenderer.invoke('update:status'),
+  checkForUpdates: () => ipcRenderer.invoke('update:check'),
+  installUpdate: () => ipcRenderer.invoke('update:install'),
+  onUpdateStatus: (cb) => {
+    const h = (_e: unknown, s: UpdateStatus): void => cb(s)
+    ipcRenderer.on('update:status', h)
+    return () => ipcRenderer.removeListener('update:status', h)
   },
   onDataChanged: (cb) => {
     const h = (): void => cb()

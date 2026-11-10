@@ -5,6 +5,7 @@ import { randomUUID } from 'crypto'
 import type { Athlete, Channel, GrowthRecord, Note, Settings, Task } from '../shared/types'
 import { audioDir, getSettings, repo, saveSettings } from './store'
 import { sync } from './sync'
+import { checkForUpdates, getUpdateStatus, initUpdater, installUpdate } from './updater'
 import { transcribeNoteAudio } from './services/transcribe'
 import { analyzeMeeting } from './services/analyze'
 import { CHANNEL_LABEL, sendTest, sendToChannel } from './services/send'
@@ -61,6 +62,10 @@ function registerIpc(): void {
     await saveSettings(s)
     await sync.configure(s)
   })
+  ipcMain.handle('app:version', () => app.getVersion())
+  ipcMain.handle('update:status', () => getUpdateStatus())
+  ipcMain.handle('update:check', () => checkForUpdates())
+  ipcMain.handle('update:install', () => installUpdate())
   ipcMain.handle('sync:status', () => sync.getStatus())
   ipcMain.handle('sync:signIn', (_e, email: string, pw: string) => sync.signIn(email, pw))
   ipcMain.handle('sync:signOut', () => sync.signOut())
@@ -177,6 +182,7 @@ app.whenReady().then(async () => {
   registerIpc()
   setupSystemAudioCapture()
   createWindow()
+  initUpdater()
   sync.init(await getSettings()).catch((e) => console.error('sync init', e))
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

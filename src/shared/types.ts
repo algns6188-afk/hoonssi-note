@@ -88,6 +88,13 @@ export const DEFAULT_SETTINGS: Settings = {
 
 export type SyncState = 'off' | 'login' | 'connecting' | 'online' | 'offline' | 'error'
 
+export interface UpdateStatus {
+  state: 'idle' | 'checking' | 'none' | 'downloading' | 'ready' | 'error'
+  version: string | null
+  percent: number
+  message: string | null
+}
+
 export interface SyncStatus {
   state: SyncState
   email: string | null
@@ -123,6 +130,11 @@ export interface HoonssiApi {
   syncNow(): Promise<SyncStatus>
   onSyncStatus(cb: (s: SyncStatus) => void): () => void
   onDataChanged(cb: () => void): () => void
+  appVersion(): Promise<string>
+  updateStatus(): Promise<UpdateStatus>
+  checkForUpdates(): Promise<UpdateStatus>
+  installUpdate(): Promise<void>
+  onUpdateStatus(cb: (s: UpdateStatus) => void): () => void
 }
 
 /** 설정 화면에 보여 줄 모델 선택지 (1시간 회의 기준 예상 비용, 1달러 = 1,400원 가정) */

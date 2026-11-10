@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { Channel, Settings, SyncStatus } from '@shared/types'
+import type { Channel, Settings, SyncStatus, UpdateStatus } from '@shared/types'
 import { CLAUDE_MODELS, TRANSCRIBE_MODELS } from '@shared/types'
 import { errMsg } from '../util'
 
@@ -31,6 +31,8 @@ export default function SettingsPage({ settings, reload, sync }: { settings: Set
   return (
     <div className="page narrow">
       <h1>설정·연동</h1>
+
+      <VersionSection />
 
       <section className="card form">
         <h2>내 정보</h2>
@@ -184,6 +186,38 @@ function ServerSection({ s, set, sync, onSave }: {
       )}
       {sync?.lastSyncAt && <p className="muted small">마지막 동기화: {new Date(sync.lastSyncAt).toLocaleString('ko-KR')}</p>}
       {err && <div className="error">{err}</div>}
+    </section>
+  )
+}
+
+function VersionSection(): JSX.Element {
+  const [version, setVersion] = useState('')
+  const [u, setU] = useState<UpdateStatus | null>(null)
+  useEffect(() => {
+    window.api.appVersion().then(setVersion)
+    window.api.updateStatus().then(setU)
+    return window.api.onUpdateStatus(setU)
+  }, [])
+  const text: Record<UpdateStatus['state'], string> = {
+    idle: '',
+    checking: '확인 중…',
+    none: '최신 버전입니다.',
+    downloading: `새 버전 v${u?.version ?? ''} 받는 중… ${u?.percent ?? 0}%`,
+    ready: `새 버전 v${u?.version ?? ''} 준비 완료`,
+    error: '업데이트 확인 실패'
+  }
+  return (
+    <section className="card form">
+      <div className="row-actions">
+        <h2 style={{ margin: 0 }}>훈씨노트 v{version}</h2>
+        <span className={u?.state === 'error' ? 'danger small' : 'muted small'}>{u ? text[u.state] : ''}</span>
+        {u?.state === 'ready' ? (
+          <button className="primary" onClick={() => window.api.installUpdate()}>업데이트 설치</button>
+        ) : (
+          <button onClick={() => window.api.checkForUpdates().then(setU)} disabled={u?.state === 'checking' || u?.state === 'downloading'}>업데이트 확인</button>
+        )}
+      </div>
+      {u?.state === 'error' && u.message && <p className="muted small">{u.message.slice(0, 200)}</p>}
     </section>
   )
 }

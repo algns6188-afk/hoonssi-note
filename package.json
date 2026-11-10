@@ -1,7 +1,7 @@
 {
   "name": "hoonssi-note",
   "productName": "훈씨노트",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "description": "팀 업무 종합 노트 - 회의 녹음/요약/분석 및 자동 공유",
   "main": "./out/main/index.js",
   "author": "Hoonssi",
@@ -54,6 +54,12 @@
           "arch": [
             "universal"
           ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "universal"
+          ]
         }
       ],
       "icon": "build/icon.png",
@@ -64,11 +70,18 @@
         "NSScreenCaptureUsageDescription": "온라인 회의 소리를 함께 녹음하기 위해 사용합니다."
       }
     },
-    "publish": []
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "algns6188-afk",
+        "repo": "hoonssi-note"
+      }
+    ]
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.6.0",
     "@supabase/supabase-js": "^2.119.0",
+    "electron-updater": "^6.8.11",
     "ws": "^8.22.2",
     "zod": "^4.6.7"
   },
@@ -85,5 +98,6 @@
     "react-dom": "^18.3.1",
     "typescript": "^5.6.3",
     "vite": "^5.4.11"
-  }
+  },
+  "repository": "https://github.com/algns6188-afk/hoonssi-note"
 }
