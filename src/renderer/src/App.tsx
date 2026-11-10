@@ -5,14 +5,16 @@ import Dashboard from './pages/Dashboard'
 import NotesPage from './pages/NotesPage'
 import TasksPage from './pages/TasksPage'
 import SettingsPage from './pages/SettingsPage'
+import AthletesPage from './pages/AthletesPage'
 
-export type Page = 'dashboard' | 'meetings' | 'notes' | 'tasks' | 'settings'
+export type Page = 'dashboard' | 'meetings' | 'notes' | 'tasks' | 'athletes' | 'settings'
 
 const NAV: { id: Page; label: string; icon: string }[] = [
   { id: 'dashboard', label: '홈', icon: '🏠' },
   { id: 'meetings', label: '회의록', icon: '🎙️' },
   { id: 'notes', label: '업무 노트', icon: '📒' },
   { id: 'tasks', label: '할 일', icon: '✅' },
+  { id: 'athletes', label: '선수 관리', icon: '🥋' },
   { id: 'settings', label: '설정·연동', icon: '⚙️' }
 ]
 
@@ -73,6 +75,7 @@ export default function App(): JSX.Element {
           />
         )}
         {page === 'tasks' && <TasksPage tasks={tasks} notes={notes} reload={reload} onOpen={openNote} />}
+        {page === 'athletes' && <AthletesPage />}
         {page === 'settings' && <SettingsPage settings={settings} reload={reload} />}
       </main>
     </div>

@@ -95,6 +95,12 @@ export interface HoonssiApi {
   analyze(noteId: string): Promise<Note>
   send(noteId: string, channels: Channel[]): Promise<Note>
   testChannel(channel: Channel): Promise<string>
+  listAthletes(): Promise<Athlete[]>
+  saveAthlete(a: Athlete): Promise<Athlete>
+  deleteAthlete(id: string): Promise<void>
+  listGrowthRecords(athleteId: string): Promise<GrowthRecord[]>
+  saveGrowthRecord(r: GrowthRecord): Promise<GrowthRecord>
+  savePdf(html: string, defaultName: string): Promise<string | null>
 }
 
 /** 설정 화면에 보여 줄 모델 선택지 (1시간 회의 기준 예상 비용, 1달러 = 1,400원 가정) */
@@ -110,3 +116,58 @@ export const TRANSCRIBE_MODELS = [
   { id: 'gpt-4o-mini-transcribe', label: 'gpt-4o-mini-transcribe · 저렴', cost: '1시간당 약 250원' },
   { id: 'gpt-transcribe', label: 'gpt-transcribe · 신규 후속 모델', cost: '1시간당 약 380원 (요금은 OpenAI에서 확인 필요)' }
 ] as const
+
+/* ---------------- 선수 관리 (성장기록부) ---------------- */
+
+export const DEFAULT_GROUPS = ['일반부', '입시부'] as const
+
+export interface Athlete {
+  id: string
+  name: string
+  group: string
+  school: string
+  grade: string
+  belt: string
+  mainPoomsae: string
+  freestyleSkill: string
+  attendance: string
+  academicGrade: string
+  universities: string[]
+  finalGoal: string
+  memo: string
+  active: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export interface BodyMeasure {
+  date: string
+  weight: number | null
+  muscle: number | null
+  fatPct: number | null
+  fitnessNote: string
+  balanceNote: string
+}
+
+export type ScoreKey = 'accuracy' | 'expression' | 'jump' | 'spin'
+
+export const SCORE_ITEMS: { key: ScoreKey; category: string; label: string }[] = [
+  { key: 'accuracy', category: '공인 품새', label: '[정확성] 시선 · 중심이동 · 기본서기' },
+  { key: 'expression', category: '공인 품새', label: '[표현력] 완급조절 · 강유 · 기백' },
+  { key: 'jump', category: '자유 품새', label: '[도약력] 아크로바틱 체공 / 높이' },
+  { key: 'spin', category: '자유 품새', label: '[회전력] 회전 발차기 안착도' }
+]
+
+export interface GrowthRecord {
+  id: string
+  athleteId: string
+  month: string // YYYY-MM
+  measures: BodyMeasure[]
+  scores: Record<ScoreKey, number | null>
+  condition: string
+  growth: string
+  competition: string
+  nextGoal: string
+  coachFeedback: string
+  updatedAt: string
+}

@@ -111,3 +111,40 @@ table.actions th { color: var(--muted); font-weight: 500; font-size: 12px; }
 .form label.check { flex-direction: row; margin: 0; }
 .row-actions { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
 .save-bar { display: flex; justify-content: flex-end; align-items: center; gap: 12px; margin-top: 16px; }
+
+/* ---------- 선수 관리 ---------- */
+.pill-count { margin-left: 6px; font-size: 11px; opacity: .7; }
+.pad-x { padding: 8px 16px 0; }
+.chip.accent { background: #fff1e0; color: #b45309; }
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin: 14px 0 4px; }
+.tab { border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: none; padding: 8px 14px; color: var(--muted); }
+.tab.on { border-bottom-color: var(--brand); color: var(--text); font-weight: 600; }
+.sheet { padding-bottom: 30px; }
+.sheet-head { display: flex; align-items: center; gap: 10px; margin: 22px 0 8px; }
+.sheet-head h2 { margin: 0; font-size: 15px; border-left: 4px solid var(--side); padding-left: 8px; }
+h3.sub { margin: 20px 0 8px; }
+.form-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px 16px; }
+.field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
+.field > span { font-size: 12px; color: var(--muted); font-weight: 600; }
+.field textarea { resize: vertical; line-height: 1.5; }
+.top-gap { margin-top: 16px; }
+.month-bar { display: flex; align-items: center; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+.grid-table { width: 100%; border-collapse: collapse; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.grid-table th, .grid-table td { border: 1px solid var(--line); padding: 6px 8px; text-align: left; vertical-align: middle; }
+.grid-table th { background: #f2f4f7; font-size: 12px; font-weight: 600; }
+.grid-table input, .grid-table textarea { width: 100%; }
+.grid-table textarea { resize: vertical; line-height: 1.5; }
+.grid-table input.num { text-align: right; }
+.grid-table.scores th { width: 110px; text-align: center; }
+.grid-table.feedback th { width: 200px; }
+.score-pick { display: flex; gap: 6px; }
+.score { width: 32px; height: 32px; border-radius: 50%; padding: 0; font-weight: 600; }
+.score.on { background: var(--side); border-color: var(--side); color: #fff; }
+.diff-cell { width: 120px; }
+.diff { font-weight: 600; }
+.diff.good { color: var(--ok); } .diff.bad { color: var(--danger); }
+.diff-row { margin-top: 8px; font-size: 13px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.grid-table.history td, .grid-table.history th { text-align: center; }
+.grid-table.history tr { cursor: pointer; }
+.grid-table.history tbody tr:hover { background: #f7f9fc; }
+.grid-table.history tr.on { background: var(--brand-soft); }

@@ -14,7 +14,13 @@ const api: HoonssiApi = {
   transcribe: (noteId) => ipcRenderer.invoke('meeting:transcribe', noteId),
   analyze: (noteId) => ipcRenderer.invoke('meeting:analyze', noteId),
   send: (noteId, channels) => ipcRenderer.invoke('meeting:send', noteId, channels),
-  testChannel: (c) => ipcRenderer.invoke('channel:test', c)
+  testChannel: (c) => ipcRenderer.invoke('channel:test', c),
+  listAthletes: () => ipcRenderer.invoke('athletes:list'),
+  saveAthlete: (a) => ipcRenderer.invoke('athletes:save', a),
+  deleteAthlete: (id) => ipcRenderer.invoke('athletes:delete', id),
+  listGrowthRecords: (athleteId) => ipcRenderer.invoke('growth:list', athleteId),
+  saveGrowthRecord: (r) => ipcRenderer.invoke('growth:save', r),
+  savePdf: (html, name) => ipcRenderer.invoke('pdf:save', html, name)
 }
 
 contextBridge.exposeInMainWorld('api', api)

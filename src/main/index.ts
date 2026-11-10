@@ -1,8 +1,8 @@
-import { app, BrowserWindow, desktopCapturer, ipcMain, session, shell } from 'electron'
+import { app, BrowserWindow, desktopCapturer, dialog, ipcMain, session, shell } from 'electron'
 import { promises as fs } from 'fs'
 import { join } from 'path'
 import { randomUUID } from 'crypto'
-import type { Channel, Note, Settings, Task } from '../shared/types'
+import type { Athlete, Channel, GrowthRecord, Note, Settings, Task } from '../shared/types'
 import { audioDir, getSettings, repo, saveSettings } from './store'
 import { transcribeNoteAudio } from './services/transcribe'
 import { analyzeMeeting } from './services/analyze'
@@ -113,6 +113,33 @@ function registerIpc(): void {
 
   ipcMain.handle('meeting:send', async (_e, noteId: string, channels: Channel[]) => {
     return sendAll(await requireNote(noteId), channels, await getSettings())
+  })
+
+  ipcMain.handle('athletes:list', () => repo.listAthletes())
+  ipcMain.handle('athletes:save', (_e, a: Athlete) => repo.saveAthlete(a))
+  ipcMain.handle('athletes:delete', (_e, id: string) => repo.deleteAthlete(id))
+  ipcMain.handle('growth:list', (_e, athleteId: string) => repo.listGrowthRecords(athleteId))
+  ipcMain.handle('growth:save', (_e, r: GrowthRecord) => repo.saveGrowthRecord(r))
+
+  // 화면에서 만든 기록부 HTML 을 A4 PDF 로 저장
+  ipcMain.handle('pdf:save', async (e, html: string, defaultName: string) => {
+    const parent = BrowserWindow.fromWebContents(e.sender) ?? undefined
+    const { canceled, filePath } = await dialog.showSaveDialog(parent!, {
+      title: 'PDF로 저장',
+      defaultPath: join(app.getPath('documents'), defaultName.replace(/[\\/:*?"<>|]/g, '_')),
+      filters: [{ name: 'PDF', extensions: ['pdf'] }]
+    })
+    if (canceled || !filePath) return null
+    const win = new BrowserWindow({ show: false, webPreferences: { javascript: false } })
+    try {
+      await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html))
+      const pdf = await win.webContents.printToPDF({ pageSize: 'A4', printBackground: true, margins: { marginType: 'default' } })
+      await fs.writeFile(filePath, pdf)
+    } finally {
+      win.destroy()
+    }
+    shell.openPath(filePath)
+    return filePath
   })
 
   ipcMain.handle('channel:test', async (_e, c: Channel) => {

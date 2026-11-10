@@ -1,7 +1,7 @@
 import { app, safeStorage } from 'electron'
 import { promises as fs } from 'fs'
 import { join } from 'path'
-import { DEFAULT_SETTINGS, type Note, type Settings, type Task } from '../shared/types'
+import { DEFAULT_SETTINGS, type Athlete, type GrowthRecord, type Note, type Settings, type Task } from '../shared/types'
 
 /**
  * 데이터 저장소.
@@ -16,9 +16,19 @@ export interface Repository {
   listTasks(): Promise<Task[]>
   saveTask(task: Task): Promise<Task>
   deleteTask(id: string): Promise<void>
+  listAthletes(): Promise<Athlete[]>
+  saveAthlete(a: Athlete): Promise<Athlete>
+  deleteAthlete(id: string): Promise<void>
+  listGrowthRecords(athleteId: string): Promise<GrowthRecord[]>
+  saveGrowthRecord(r: GrowthRecord): Promise<GrowthRecord>
 }
 
-interface DbShape { notes: Note[]; tasks: Task[] }
+interface DbShape {
+  notes: Note[]
+  tasks: Task[]
+  athletes: Athlete[]
+  growthRecords: GrowthRecord[]
+}
 
 export const dataDir = (): string => join(app.getPath('userData'), 'data')
 export const audioDir = (noteId: string): string => join(dataDir(), 'audio', noteId)
@@ -29,10 +39,18 @@ class LocalJsonRepository implements Repository {
 
   private async load(): Promise<DbShape> {
     if (this.cache) return this.cache
+    let raw: Partial<DbShape> = {}
     try {
-      this.cache = JSON.parse(await fs.readFile(this.file(), 'utf8')) as DbShape
+      raw = JSON.parse(await fs.readFile(this.file(), 'utf8'))
     } catch {
-      this.cache = { notes: [], tasks: [] }
+      // 첫 실행
+    }
+    // 이전 버전 데이터에 없는 항목은 빈 목록으로 채움
+    this.cache = {
+      notes: raw.notes ?? [],
+      tasks: raw.tasks ?? [],
+      athletes: raw.athletes ?? [],
+      growthRecords: raw.growthRecords ?? []
     }
     return this.cache
   }
@@ -81,6 +99,40 @@ class LocalJsonRepository implements Repository {
     const db = await this.load()
     db.tasks = db.tasks.filter((t) => t.id !== id)
     await this.flush()
+  }
+
+  async listAthletes(): Promise<Athlete[]> {
+    return [...(await this.load()).athletes].sort((a, b) => a.name.localeCompare(b.name, 'ko'))
+  }
+  async saveAthlete(a: Athlete): Promise<Athlete> {
+    const db = await this.load()
+    const saved = { ...a, updatedAt: new Date().toISOString() }
+    const i = db.athletes.findIndex((x) => x.id === a.id)
+    if (i >= 0) db.athletes[i] = saved
+    else db.athletes.push(saved)
+    await this.flush()
+    return saved
+  }
+  async deleteAthlete(id: string): Promise<void> {
+    const db = await this.load()
+    db.athletes = db.athletes.filter((a) => a.id !== id)
+    db.growthRecords = db.growthRecords.filter((r) => r.athleteId !== id)
+    await this.flush()
+  }
+  async listGrowthRecords(athleteId: string): Promise<GrowthRecord[]> {
+    return (await this.load()).growthRecords
+      .filter((r) => r.athleteId === athleteId)
+      .sort((a, b) => a.month.localeCompare(b.month))
+  }
+  async saveGrowthRecord(r: GrowthRecord): Promise<GrowthRecord> {
+    const db = await this.load()
+    const saved = { ...r, updatedAt: new Date().toISOString() }
+    // 한 선수의 한 달 기록은 하나만 유지
+    const i = db.growthRecords.findIndex((x) => x.id === r.id || (x.athleteId === r.athleteId && x.month === r.month))
+    if (i >= 0) db.growthRecords[i] = saved
+    else db.growthRecords.push(saved)
+    await this.flush()
+    return saved
   }
 }
 
