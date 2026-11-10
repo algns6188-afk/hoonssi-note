@@ -13,7 +13,7 @@ function diff(a: number | null | undefined, b: number | null | undefined, unit: 
 }
 
 /** 종이 양식과 같은 배치의 성장기록부 HTML (A4 PDF 용) */
-export function buildRecordHtml(a: Athlete, r: GrowthRecord, prev: GrowthRecord | null): string {
+export function buildRecordHtml(a: Athlete, r: GrowthRecord, prev: GrowthRecord | null, orgName: string): string {
   const [y, m] = r.month.split('-')
   const rows: (BodyMeasure | null)[] = [...r.measures]
   while (rows.length < 3) rows.push(null)
@@ -62,7 +62,7 @@ export function buildRecordHtml(a: Athlete, r: GrowthRecord, prev: GrowthRecord 
     .fb th { width:22%; height:70px; } .fb td { vertical-align:top; }
     .page2 { page-break-before: always; }
   </style></head><body>
-    <div class="banner"><div><h1>품새 선수단 입시·성장 기록부</h1><p>강철 태권도장 선수단 기량 향상 및 컨디셔닝 매니지먼트 시스템</p></div>
+    <div class="banner"><div><h1>품새 선수단 입시·성장 기록부</h1><p>${esc(orgName ? orgName + ' ' : '')}선수단 기량 향상 및 컨디셔닝 매니지먼트 시스템</p></div>
       <div class="month">${esc(y)}년 ${Number(m)}월</div></div>
 
     <h2>1. 선수 프로필 &amp; 입시 목표 대학</h2>

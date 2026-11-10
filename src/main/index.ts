@@ -1,5 +1,5 @@
 import { app, BrowserWindow, desktopCapturer, dialog, ipcMain, session, shell } from 'electron'
-import { promises as fs } from 'fs'
+import { cpSync, existsSync, promises as fs } from 'fs'
 import { join } from 'path'
 import { randomUUID } from 'crypto'
 import type { Athlete, Channel, GrowthRecord, Note, Settings, Task } from '../shared/types'
@@ -16,7 +16,7 @@ function createWindow(): void {
     height: 820,
     minWidth: 960,
     minHeight: 600,
-    title: '훈씨노트',
+    title: '강철노트',
     backgroundColor: '#f6f7f9',
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -177,6 +177,27 @@ async function sendAll(note: Note, channels: Channel[], s: Settings): Promise<No
   }
   return repo.saveNote(note)
 }
+
+/**
+ * 프로그램 이름이 '훈씨노트' → '강철노트'로 바뀌면서 데이터 폴더 이름도 바뀜.
+ * 새 폴더에 데이터가 없고 옛 폴더에 있으면 한 번 복사해 옴 (옛 폴더는 그대로 둠).
+ */
+function migrateFromOldName(): void {
+  try {
+    const newData = join(app.getPath('userData'), 'data')
+    if (existsSync(newData)) return
+    for (const oldName of ['훈씨노트', 'hoonssi-note']) {
+      const oldData = join(app.getPath('appData'), oldName, 'data')
+      if (oldData !== newData && existsSync(oldData)) {
+        cpSync(oldData, newData, { recursive: true })
+        return
+      }
+    }
+  } catch (e) {
+    console.error('이전 데이터 옮기기 실패', e)
+  }
+}
+migrateFromOldName()
 
 app.whenReady().then(async () => {
   registerIpc()

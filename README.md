@@ -1,4 +1,4 @@
-# 훈씨노트
+# 강철노트
 
 팀 업무를 한곳에서 정리하는 PC 프로그램 (Windows · Mac)
 
@@ -54,7 +54,7 @@ GitHub의 main 에 코드가 올라갈 때마다 Windows·Mac 설치 파일이 �
 1. Supabase 프로젝트를 만들고 SQL Editor 에서 `supabase/schema.sql` 을 실행합니다.
 2. Authentication → Sign In / Providers 에서 **Allow new users to sign up** 을 끕니다.
 3. Authentication → Users → Add user 로 팀원 계정을 만듭니다 (**Auto Confirm User** 체크).
-4. 각 PC의 훈씨노트 **설정·연동 → 팀 공유 서버**에 Project URL 과 publishable 키를 넣고 로그인합니다.
+4. 각 PC의 강철노트 **설정·연동 → 팀 공유 서버**에 Project URL 과 publishable 키를 넣고 로그인합니다.
 
 - 노트·회의록·할 일·선수 기록이 공유됩니다. API 키 등 설정과 녹음 파일은 PC마다 따로입니다.
 - 인터넷이 끊겨도 PC에 먼저 저장되고, 다시 연결되면 자동으로 올라갑니다.

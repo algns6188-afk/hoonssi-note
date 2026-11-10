@@ -37,6 +37,8 @@ export default function SettingsPage({ settings, reload, sync }: { settings: Set
       <section className="card form">
         <h2>내 정보</h2>
         <label>이름<input value={s.userName} onChange={(e) => set('userName', e.target.value)} placeholder="예: 김훈" /></label>
+        <label>도장·회사 이름 <span className="muted small">(성장기록부 PDF 머리글에 표시)</span>
+          <input value={s.orgName} onChange={(e) => set('orgName', e.target.value)} placeholder="예: 강철 태권도장" /></label>
       </section>
 
       <ServerSection s={s} set={set} sync={sync} onSave={save} />
@@ -209,7 +211,7 @@ function VersionSection(): JSX.Element {
   return (
     <section className="card form">
       <div className="row-actions">
-        <h2 style={{ margin: 0 }}>훈씨노트 v{version}</h2>
+        <h2 style={{ margin: 0 }}>강철노트 v{version}</h2>
         <span className={u?.state === 'error' ? 'danger small' : 'muted small'}>{u ? text[u.state] : ''}</span>
         {u?.state === 'ready' ? (
           <button className="primary" onClick={() => window.api.installUpdate()}>업데이트 설치</button>

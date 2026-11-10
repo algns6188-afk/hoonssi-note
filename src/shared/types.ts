@@ -59,6 +59,8 @@ export type Channel = 'slack' | 'teams' | 'kakao'
 
 export interface Settings {
   userName: string
+  /** 도장·회사 이름 (기록부 PDF 머리글 등에 표시) */
+  orgName: string
   anthropicKey: string
   openaiKey: string
   transcribeModel: string
@@ -74,6 +76,7 @@ export interface Settings {
 
 export const DEFAULT_SETTINGS: Settings = {
   userName: '',
+  orgName: '',
   anthropicKey: '',
   openaiKey: '',
   transcribeModel: 'whisper-1',

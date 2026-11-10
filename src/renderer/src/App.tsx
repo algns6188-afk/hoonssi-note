@@ -65,8 +65,8 @@ export default function App(): JSX.Element {
     <div className="app">
       <aside className="sidebar">
         <div className="brand">
-          <span className="logo">훈</span>
-          <span>훈씨노트</span>
+          <span className="logo">강</span>
+          <span>강철노트</span>
         </div>
         <nav>
           {NAV.map((n) => (

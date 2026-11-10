@@ -1,10 +1,10 @@
 {
   "name": "hoonssi-note",
-  "productName": "훈씨노트",
-  "version": "0.4.0",
-  "description": "팀 업무 종합 노트 - 회의 녹음/요약/분석 및 자동 공유",
+  "productName": "강철노트",
+  "version": "0.5.0",
+  "description": "강철노트 - 팀 업무·회의·선수 관리 종합 노트",
   "main": "./out/main/index.js",
-  "author": "Hoonssi",
+  "author": "강철노트",
   "license": "UNLICENSED",
   "private": true,
   "scripts": {
@@ -16,7 +16,7 @@
   },
   "build": {
     "appId": "com.hoonssi.note",
-    "productName": "훈씨노트",
+    "productName": "강철노트",
     "directories": {
       "output": "release",
       "buildResources": "build"
@@ -34,14 +34,14 @@
         }
       ],
       "icon": "build/icon.png",
-      "artifactName": "HoonssiNote-Setup-${version}.${ext}"
+      "artifactName": "KangcheolNote-Setup-${version}.${ext}"
     },
     "nsis": {
       "oneClick": false,
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
-      "shortcutName": "훈씨노트",
+      "shortcutName": "강철노트",
       "installerLanguages": [
         "ko_KR"
       ],
@@ -64,7 +64,7 @@
       ],
       "icon": "build/icon.png",
       "category": "public.app-category.productivity",
-      "artifactName": "HoonssiNote-${version}.${ext}",
+      "artifactName": "KangcheolNote-${version}.${ext}",
       "extendInfo": {
         "NSMicrophoneUsageDescription": "회의 녹음을 위해 마이크를 사용합니다.",
         "NSScreenCaptureUsageDescription": "온라인 회의 소리를 함께 녹음하기 위해 사용합니다."

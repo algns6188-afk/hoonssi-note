@@ -309,8 +309,9 @@ function MonthlyRecord({ athlete }: { athlete: Athlete }): JSX.Element {
     setMsg(null)
     try {
       await saver.flush()
+      const { orgName } = await window.api.getSettings()
       const path = await window.api.savePdf(
-        buildRecordHtml(athlete, rec, prev),
+        buildRecordHtml(athlete, rec, prev, orgName),
         `${athlete.name || '선수'}_성장기록부_${month}.pdf`
       )
       if (path) setMsg(`PDF로 저장했습니다: ${path}`)

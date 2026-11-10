@@ -13,7 +13,7 @@ export function formatMeetingText(note: Note): string {
     ? a.actionItems.map((x) => `• ${x.task}${x.owner ? ` — ${x.owner}` : ''}${x.due ? ` (~${x.due})` : ''}`).join('\n')
     : '• 없음'
   return [
-    `[훈씨노트] ${note.title || a.title} (${date})`,
+    `[강철노트] ${note.title || a.title} (${date})`,
     note.meeting?.participants.length ? `참석: ${note.meeting.participants.join(', ')}` : '',
     '',
     `■ 요약\n${a.summary}`,
@@ -79,7 +79,7 @@ async function sendTeams(webhook: string, text: string): Promise<void> {
 async function sendKakao(token: string, note: Note): Promise<void> {
   if (!token) throw new Error('설정에서 카카오 액세스 토큰을 입력해 주세요.')
   const a = note.meeting!.analysis!
-  let text = `[훈씨노트] ${note.title || a.title}\n${a.summary}\n할 일 ${a.actionItems.length}건`
+  let text = `[강철노트] ${note.title || a.title}\n${a.summary}\n할 일 ${a.actionItems.length}건`
   if (text.length > 200) text = text.slice(0, 197) + '...'
   const body = new URLSearchParams({
     template_object: JSON.stringify({ object_type: 'text', text, link: {} })
@@ -101,7 +101,7 @@ export async function sendToChannel(channel: Channel, settings: Settings, note: 
 
 /** 설정 화면의 "테스트 전송" 버튼용 */
 export async function sendTest(channel: Channel, settings: Settings): Promise<void> {
-  const msg = '[훈씨노트] 연동 테스트 메시지입니다. ✅'
+  const msg = '[강철노트] 연동 테스트 메시지입니다. ✅'
   if (channel === 'slack') return sendSlack(settings.slackWebhook, msg)
   if (channel === 'teams') return sendTeams(settings.teamsWebhook, msg)
   if (!settings.kakaoAccessToken) throw new Error('설정에서 카카오 액세스 토큰을 입력해 주세요.')
