@@ -43,6 +43,17 @@ GitHub의 main 에 코드가 올라갈 때마다 Windows·Mac 설치 파일이 �
 
 각 연동에 "AI 정리가 끝나면 자동 전송"을 켜 두면 분석이 끝나자마자 바로 보내집니다.
 
+## 팀 공유 서버 (여러 PC 실시간 동기화)
+
+1. Supabase 프로젝트를 만들고 SQL Editor 에서 `supabase/schema.sql` 을 실행합니다.
+2. Authentication → Sign In / Providers 에서 **Allow new users to sign up** 을 끕니다.
+3. Authentication → Users → Add user 로 팀원 계정을 만듭니다 (**Auto Confirm User** 체크).
+4. 각 PC의 훈씨노트 **설정·연동 → 팀 공유 서버**에 Project URL 과 publishable 키를 넣고 로그인합니다.
+
+- 노트·회의록·할 일·선수 기록이 공유됩니다. API 키 등 설정과 녹음 파일은 PC마다 따로입니다.
+- 인터넷이 끊겨도 PC에 먼저 저장되고, 다시 연결되면 자동으로 올라갑니다.
+- 같은 항목을 두 PC에서 동시에 고치면 나중에 고친 내용이 남습니다.
+
 ## 구조
 
 ```
@@ -65,5 +76,5 @@ src/
 - [x] 2단계: 녹음 → 텍스트 변환 → AI 요약·분석
 - [x] 3단계: Slack / Teams / 카카오톡(나에게) 전송
 - [x] 선수 관리 · 월별 성장기록부 · PDF 저장
-- [ ] 4단계: 팀 공유 서버(Supabase) · 로그인 · 권한
+- [x] 4단계: 팀 공유 서버(Supabase) · 로그인 · 실시간 동기화 · 오프라인 대기열
 - [ ] 카카오 알림톡(팀원에게 전송), 화자 구분, 기존 녹음 파일 불러오기, 일정 연동

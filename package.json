@@ -1,7 +1,7 @@
 {
   "name": "hoonssi-note",
   "productName": "훈씨노트",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "팀 업무 종합 노트 - 회의 녹음/요약/분석 및 자동 공유",
   "main": "./out/main/index.js",
   "author": "Hoonssi",
