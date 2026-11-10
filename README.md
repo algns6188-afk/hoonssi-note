@@ -21,8 +21,8 @@ npm run dist:win   # Windows 설치 파일 만들기 (release 폴더)
 npm run dist:mac   # Mac 설치 파일 만들기 (Mac에서 실행)
 ```
 
-GitHub에 올려 두면 `v0.1.0` 같은 버전 태그를 만들 때마다 Windows·Mac 설치 파일이
-자동으로 만들어져 **Releases** 페이지에 올라갑니다 (`.github/workflows/build.yml`).
+GitHub의 main 에 코드가 올라갈 때마다 Windows·Mac 설치 파일이 자동으로 만들어져
+**Releases** 페이지에 올라갑니다 (`.github/workflows/build.yml`). 릴리스 이름은 `package.json` 의 `version` 을 따릅니다.
 
 > 설치 파일은 아직 코드 서명이 없어서 처음 실행할 때 경고가 뜹니다.
 > - Windows: "Windows의 PC 보호" → **추가 정보** → **실행**

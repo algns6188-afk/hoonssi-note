@@ -1,11 +1,18 @@
-# 버전 태그(v0.1.0 등)를 올리거나 Actions 화면에서 직접 실행하면
+# main 에 코드가 올라오거나 Actions 화면에서 직접 실행하면
 # Windows(.exe)와 Mac(.dmg) 설치 파일을 만들어 Releases 에 올립니다.
+# 릴리스 이름(v0.1.0 등)은 package.json 의 version 을 따릅니다.
+# 같은 버전으로 다시 올리면 그 릴리스의 설치 파일이 새것으로 바뀝니다.
 name: 설치 파일 만들기
 
 on:
   push:
-    tags: ['v*']
+    branches: [main]
+    paths-ignore: ['**.md', 'docs/**']
   workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: write
@@ -41,14 +48,26 @@ jobs:
 
   release:
     needs: build
-    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+      - id: ver
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
       - uses: actions/download-artifact@v4
         with:
           path: dist
           merge-multiple: true
       - uses: softprops/action-gh-release@v2
         with:
+          tag_name: v${{ steps.ver.outputs.version }}
+          name: 훈씨노트 v${{ steps.ver.outputs.version }}
+          target_commitish: ${{ github.sha }}
           files: dist/*
-          generate_release_notes: true
+          body: |
+            ## 다운로드
+            - **Windows**: `HoonssiNote-Setup-${{ steps.ver.outputs.version }}.exe`
+            - **Mac**: `HoonssiNote-${{ steps.ver.outputs.version }}.dmg`
+
+            처음 실행할 때 경고가 뜨면
+            - Windows: "추가 정보" → "실행"
+            - Mac: 앱을 우클릭 → "열기"
