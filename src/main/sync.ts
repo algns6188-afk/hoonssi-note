@@ -1,4 +1,4 @@
-import { BrowserWindow, safeStorage } from 'electron'
+import { BrowserWindow, net, safeStorage } from 'electron'
 import { promises as fs } from 'fs'
 import { join } from 'path'
 import { createClient, type RealtimeChannel, type SupabaseClient } from '@supabase/supabase-js'
@@ -81,6 +81,30 @@ const authStorage = {
   }
 }
 
+/** 'https://xxx.supabase.co/rest/v1/' 처럼 붙여넣어도 기본 주소만 남김 */
+export function normalizeUrl(raw: string): string {
+  let u = raw.trim()
+  if (!u) return ''
+  if (!/^https?:\/\//i.test(u)) u = 'https://' + u
+  try {
+    const url = new URL(u)
+    return `${url.protocol}//${url.host}`
+  } catch {
+    return u.replace(/\/+$/, '')
+  }
+}
+
+const isNetworkError = (m: string): boolean =>
+  /fetch failed|failed to fetch|network|net::ERR_|ENOTFOUND|ECONN|ETIMEDOUT|EAI_AGAIN|certificate|CERT_/i.test(m)
+
+/** 오류의 실제 원인(예: 인증서 문제, 주소 못 찾음)까지 꺼내서 보여줌 */
+function errorText(e: unknown): string {
+  if (!(e instanceof Error)) return String(e)
+  const cause = (e as Error & { cause?: { code?: string; message?: string } }).cause
+  const extra = cause?.code ?? cause?.message
+  return extra && !e.message.includes(extra) ? `${e.message} (${extra})` : e.message
+}
+
 class SyncService {
   private client: SupabaseClient | null = null
   private channel: RealtimeChannel | null = null
@@ -92,6 +116,7 @@ class SyncService {
   private pollTimer: NodeJS.Timeout | null = null
   private changedTimer: NodeJS.Timeout | null = null
   private pushing = false
+  private fastPoll: NodeJS.Timeout | null = null
 
   async init(settings: Settings): Promise<void> {
     const items = await readJson<QueueItem[]>('sync-queue.json', [])
@@ -108,7 +133,7 @@ class SyncService {
 
   /** 설정의 서버 주소/키가 바뀌면 다시 연결 */
   async configure(s: Settings): Promise<void> {
-    const url = s.serverUrl.trim().replace(/\/+$/, '')
+    const url = normalizeUrl(s.serverUrl)
     const key = s.serverKey.trim()
     const server = url && key ? url : ''
     if (server === this.server && this.client) return
@@ -123,6 +148,8 @@ class SyncService {
 
     this.client = createClient(url, key, {
       auth: { storage: authStorage, persistSession: true, autoRefreshToken: true, detectSessionInUrl: false },
+      // 크롬과 같은 통신 방식: 회사망 프록시·백신 인증서 등 PC의 인터넷 설정을 그대로 사용
+      global: { fetch: ((input: RequestInfo | URL, init?: RequestInit) => net.fetch(input as string, init)) as typeof fetch },
       realtime: { transport: WebSocket as unknown as typeof globalThis.WebSocket }
     })
     this.client.auth.onAuthStateChange((event, session) => {
@@ -144,7 +171,7 @@ class SyncService {
     try {
       ;({ error } = await this.client.auth.signInWithPassword({ email: email.trim(), password }))
     } catch (e) {
-      error = { message: e instanceof Error ? e.message : String(e) }
+      error = { message: errorText(e) }
     }
     if (error) {
       const m = error.message
@@ -153,8 +180,8 @@ class SyncService {
           ? '이메일 또는 비밀번호가 맞지 않습니다.'
           : /email not confirmed/i.test(m)
             ? '이메일 인증이 안 된 계정입니다. 관리자가 계정을 만들 때 "Auto Confirm User"를 체크해야 합니다.'
-            : /fetch failed|network|ENOTFOUND|ECONN/i.test(m)
-              ? '서버에 연결할 수 없습니다. 인터넷 연결과 서버 주소를 확인해 주세요.'
+            : isNetworkError(m)
+              ? `서버에 연결할 수 없습니다. 인터넷 연결과 서버 주소를 확인해 주세요.\n(주소: ${this.server} · 원인: ${m})`
               : m
       )
     }
@@ -209,7 +236,7 @@ class SyncService {
   }
 
   private fail(e: unknown): void {
-    const msg = e instanceof Error ? e.message : String(e)
+    const msg = errorText(e)
     const auth = /jwt|token|auth|401|403/i.test(msg)
     const missingTable = /relation .* does not exist|could not find the table/i.test(msg)
     this.setStatus({
@@ -328,10 +355,22 @@ class SyncService {
       if (status === 'SUBSCRIBED') {
         if (this.status.state !== 'online') this.setStatus({ state: 'online', message: null })
       } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-        this.stopRealtime().then(() => this.fail(new Error('realtime ' + status)))
+        this.stopRealtime().then(() => this.fallbackToPolling())
       }
     })
     this.channel = ch
+  }
+
+  /** 실시간 연결(웹소켓)이 막힌 경우: 15초마다 서버를 확인하고, 2분마다 실시간 재연결 시도 */
+  private fallbackToPolling(): void {
+    if (this.fastPoll) return
+    this.setStatus({ message: '실시간 연결이 막혀 있어 15초마다 서버를 확인합니다.' })
+    this.fastPoll = setInterval(() => this.quietSync(), 15_000)
+    setTimeout(() => {
+      if (this.fastPoll) clearInterval(this.fastPoll)
+      this.fastPoll = null
+      if (this.client && this.status.state === 'online') this.subscribe()
+    }, 120_000)
   }
 
   private async stopRealtime(): Promise<void> {
@@ -343,8 +382,10 @@ class SyncService {
     await this.stopRealtime()
     if (this.retryTimer) clearTimeout(this.retryTimer)
     if (this.pollTimer) clearInterval(this.pollTimer)
+    if (this.fastPoll) clearInterval(this.fastPoll)
     this.retryTimer = null
     this.pollTimer = null
+    this.fastPoll = null
     this.client = null
   }
 
