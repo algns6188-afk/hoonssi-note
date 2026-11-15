@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { supabase, loginEmail, errText } from '../supabase'
 import { LANGS, useI18n, type Lang } from '../i18n'
+import { InstallBanner, InstallLink } from '../install'
 
 export function LangPicker(): JSX.Element {
   const { lang, setLang } = useI18n()
@@ -33,6 +34,7 @@ export default function AuthScreen(): JSX.Element {
       <div className="auth-top">
         <LangPicker />
       </div>
+      <InstallBanner />
       <div className="auth-brand">
         <div className="logo big">강</div>
         <h1>{t.appName}</h1>
@@ -42,6 +44,7 @@ export default function AuthScreen(): JSX.Element {
         <button className={mode === 'signup' ? 'on' : ''} onClick={() => setMode('signup')}>{t.signup}</button>
       </div>
       {mode === 'login' ? <LoginForm /> : <SignupForm />}
+      <InstallLink />
     </div>
   )
 }

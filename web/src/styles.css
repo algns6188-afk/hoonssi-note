@@ -132,3 +132,64 @@ code { background: #eef0f4; padding: 1px 6px; border-radius: 4px; }
 .kiosk-time { font-size: 22px; opacity: .8; }
 .kiosk-result.in { background: radial-gradient(circle at 50% 40%, rgba(14,138,95,.45), transparent 60%); }
 .kiosk-result.out { background: radial-gradient(circle at 50% 40%, rgba(109,74,209,.45), transparent 60%); }
+
+/* ---------- 설치 안내 ---------- */
+.install { display: flex; align-items: center; gap: 8px; }
+.install.warn { background: #fff4e5; }
+.small-btn { padding: 6px 12px; font-size: 13px; }
+.link-btn { display: block; margin: 18px auto 0; border: 0; background: none; color: var(--brand); font-weight: 600; }
+.guide { display: flex; flex-direction: column; gap: 10px; }
+.guide-ok { background: var(--in-soft); color: var(--in); border-radius: 12px; padding: 12px; font-weight: 600; }
+.guide-warn { background: #fff4e5; border-radius: 12px; padding: 12px; }
+.guide-warn p { margin: 6px 0; }
+.small-seg button { font-size: 13px; padding: 8px 4px; }
+.steps { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+.steps-title { font-weight: 700; font-size: 14px; margin-bottom: 6px; }
+.steps ol { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 8px; font-size: 15px; line-height: 1.5; }
+.guide-note { background: var(--brand-soft); border-radius: 10px; padding: 10px 12px; font-size: 13px; margin: 0; }
+.side-brand { display: none; }
+.kids { display: block; }
+
+/* ---------- 컴퓨터(넓은 화면) ---------- */
+@media (min-width: 900px) {
+  :root { font-size: 15px; }
+  .mobile { max-width: 1200px; padding: 0 32px 40px; }
+  .m-head { padding-top: 24px; }
+  .m-title { font-size: 26px; }
+
+  /* 관리자: 왼쪽 메뉴 */
+  .mobile.admin { margin-left: 220px; max-width: 1240px; }
+  .tabbar { top: 0; bottom: 0; left: 0; right: auto; width: 220px; flex-direction: column; justify-content: flex-start; gap: 4px;
+    padding: 20px 12px; background: var(--side); border: 0; }
+  .tabbar button { flex: none; flex-direction: row; justify-content: flex-start; gap: 12px; font-size: 15px; padding: 12px 14px; color: #c9d1e6; border-radius: 10px; }
+  .tabbar button span { font-size: 18px; width: 22px; text-align: center; }
+  .tabbar button:hover { background: rgba(255,255,255,.06); }
+  .tabbar button.on { background: rgba(255,255,255,.12); color: #fff; }
+  .side-brand { display: flex; align-items: center; gap: 10px; color: #fff; font-weight: 800; font-size: 17px; padding: 0 8px 22px; }
+  .admin .m-head .logo { display: none; }
+
+  /* 목록을 여러 칸으로 */
+  .list { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 10px; background: none; border: 0; overflow: visible; }
+  .list li { background: #fff; border: 1px solid var(--line); border-radius: 12px; }
+  .list li:last-child { border-bottom: 1px solid var(--line); }
+  .row-btn:hover { background: #f7f9fc; }
+  .stats3 { grid-template-columns: repeat(3, 200px); }
+  .search { max-width: 420px; }
+  .wide { max-width: 420px; }
+  .page > .primary.big.wide { max-width: 320px; }
+  .admin .card { max-width: 760px; }
+  .timeline { max-width: 900px; }
+
+  /* 아래에서 올라오던 창 → 오른쪽 패널 */
+  .sheet-bg { justify-content: flex-end; align-items: stretch; }
+  .sheet { max-width: 520px; max-height: none; height: 100vh; border-radius: 20px 0 0 20px; padding: 24px; }
+
+  /* 학부모: 아이 카드 두 칸 */
+  .kids { display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 16px; }
+  .kids .card { margin: 0; }
+  .install { max-width: 760px; }
+
+  /* 로그인: 가운데 카드 */
+  .auth { padding-top: 8vh; }
+}
+.share-icon { vertical-align: -4px; margin: 0 2px; }

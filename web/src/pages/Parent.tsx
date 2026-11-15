@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase, hhmm, todayStartIso, type Attendance, type Member, type Student } from '../supabase'
 import { dayLabel, useI18n } from '../i18n'
 import { LangPicker } from './Auth'
+import { InstallBanner } from '../install'
 
 export default function ParentApp({ member }: { member: Member }): JSX.Element {
   const { t } = useI18n()
@@ -44,14 +45,16 @@ export default function ParentApp({ member }: { member: Member }): JSX.Element {
         <LangPicker />
       </header>
 
-      <InstallHint />
+      <InstallBanner />
 
       {kids === null ? (
         <p className="center muted">{t.loading}</p>
       ) : kids.length === 0 ? (
         <p className="center muted">{t.noRecords}</p>
       ) : (
-        kids.map((k) => <KidCard key={k.id} kid={k} records={records.filter((r) => r.student_id === k.id)} />)
+        <div className="kids">
+          {kids.map((k) => <KidCard key={k.id} kid={k} records={records.filter((r) => r.student_id === k.id)} />)}
+        </div>
       )}
 
       <button className="ghost center-btn" onClick={() => supabase.auth.signOut()}>{t.logout}</button>
@@ -107,40 +110,5 @@ function KidCard({ kid, records }: { kid: Student; records: Attendance[] }): JSX
         </ul>
       )}
     </section>
-  )
-}
-
-/** 홈 화면 앱으로 실행 중이 아니면 설치 방법 안내 (닫으면 다시 안 보임) */
-function InstallHint(): JSX.Element | null {
-  const { t } = useI18n()
-  const standalone =
-    window.matchMedia?.('(display-mode: standalone)').matches || (navigator as Navigator & { standalone?: boolean }).standalone
-  const [hidden, setHidden] = useState(() => {
-    try {
-      return localStorage.getItem('installHintHidden') === '1'
-    } catch {
-      return false
-    }
-  })
-  if (standalone || hidden) return null
-  const ios = /iphone|ipad|ipod/i.test(navigator.userAgent)
-  return (
-    <div className="install">
-      <b>📲 {t.installTitle}</b>
-      <p>{ios ? t.installIos : t.installAndroid}</p>
-      <button
-        className="ghost small"
-        onClick={() => {
-          setHidden(true)
-          try {
-            localStorage.setItem('installHintHidden', '1')
-          } catch {
-            // 무시
-          }
-        }}
-      >
-        {t.close}
-      </button>
-    </div>
   )
 }

@@ -5,6 +5,7 @@ import {
 } from '../supabase'
 import { dayLabel, useI18n } from '../i18n'
 import KioskScreen from './Kiosk'
+import { InstallBanner, InstallGuide } from '../install'
 
 type Tab = 'today' | 'students' | 'timeline' | 'more'
 const APP_URL = location.origin + location.pathname
@@ -47,12 +48,14 @@ export default function AdminApp({ member }: { member: Member }): JSX.Element {
         </div>
       </header>
 
+      <InstallBanner />
       {tab === 'today' && <TodayTab students={students} today={today} onKiosk={() => setKiosk(true)} />}
       {tab === 'students' && <StudentsTab students={students} reload={load} />}
       {tab === 'timeline' && <TimelineTab />}
       {tab === 'more' && <MoreTab member={member} onKiosk={() => setKiosk(true)} />}
 
       <nav className="tabbar">
+        <div className="side-brand"><div className="logo">강</div>강철노트</div>
         {([['today', '✅', '출석'], ['students', '🥋', '학생'], ['timeline', '🕒', '타임라인'], ['more', '⋯', '더보기']] as const).map(([id, icon, label]) => (
           <button key={id} className={tab === id ? 'on' : ''} onClick={() => setTab(id)}>
             <span>{icon}</span>{label}
@@ -448,7 +451,12 @@ function MoreTab({ member, onKiosk }: { member: Member; onKiosk(): void }): JSX.
       <section className="card">
         <h3>앱 주소</h3>
         <p className="small"><code>{APP_URL}</code></p>
-        <p className="muted small">휴대폰에서 열고 "홈 화면에 추가"하면 앱처럼 쓸 수 있어요.</p>
+      </section>
+
+      <section className="card">
+        <h3>📲 홈 화면에 추가하는 법</h3>
+        <p className="muted small">학부모님이 물어보시면 이 화면을 보여 주세요. 학부모 화면에서는 각자 언어로 나와요.</p>
+        <InstallGuide compact />
       </section>
 
       <button className="ghost wide" onClick={() => supabase.auth.signOut()}>로그아웃</button>
