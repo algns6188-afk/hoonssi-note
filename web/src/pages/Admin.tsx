@@ -52,7 +52,7 @@ export default function AdminApp({ member }: { member: Member }): JSX.Element {
       {tab === 'today' && <TodayTab students={students} today={today} onKiosk={() => setKiosk(true)} />}
       {tab === 'students' && <StudentsTab students={students} reload={load} />}
       {tab === 'timeline' && <TimelineTab />}
-      {tab === 'more' && <MoreTab member={member} onKiosk={() => setKiosk(true)} />}
+      {tab === 'more' && <MoreTab member={member} students={students} onKiosk={() => setKiosk(true)} />}
 
       <nav className="tabbar">
         <div className="side-brand"><div className="logo">강</div>강철노트</div>
@@ -270,14 +270,10 @@ function FamilySection({ student, all }: { student: Student; all: Student[] }): 
   }, [load])
 
   const create = async (): Promise<void> => {
-    const { data: org } = await supabase.rpc('my_org')
     const ids = [student.id, ...siblings]
-    const names = all.filter((s) => ids.includes(s.id)).map((s) => s.name)
-    const inv = { code: makeCode(), org_id: org, role: 'parent' as const, student_ids: ids, label: `${names.join('·')} 가족` }
-    const { data, error } = await supabase.from('invites').insert(inv).select().single()
-    if (error) return alert('만들기 실패: ' + errText(error))
-    await supabase.from('timeline').insert({ org_id: org, kind: 'invite', summary: `${inv.label} 학부모 초대 코드 발급 (${inv.code})`, student_id: student.id })
-    setMade(data as Invite)
+    const inv = await createParentInvite(all.filter((s) => ids.includes(s.id)))
+    if (!inv) return
+    setMade(inv)
     setSiblings([])
     load()
   }
@@ -316,6 +312,20 @@ function FamilySection({ student, all }: { student: Student; all: Student[] }): 
       )}
     </div>
   )
+}
+
+/** 학부모 초대 코드 발급 (형제는 함께) + 타임라인 기록 */
+async function createParentInvite(kids: Student[]): Promise<Invite | null> {
+  if (!kids.length) return null
+  const { data: org } = await supabase.rpc('my_org')
+  const inv = { code: makeCode(), org_id: org, role: 'parent' as const, student_ids: kids.map((k) => k.id), label: `${kids.map((k) => k.name).join('·')} 가족` }
+  const { data, error } = await supabase.from('invites').insert(inv).select().single()
+  if (error) {
+    alert('만들기 실패: ' + errText(error))
+    return null
+  }
+  await supabase.from('timeline').insert({ org_id: org, kind: 'invite', summary: `${inv.label} 학부모 초대 코드 발급 (${inv.code})`, student_id: kids[0].id })
+  return data as Invite
 }
 
 /** 학부모에게 보낼 안내문 (4개 언어 함께) */
@@ -397,7 +407,107 @@ function TimelineTab(): JSX.Element {
 
 /* ---------------- 더보기 ---------------- */
 
-function MoreTab({ member, onKiosk }: { member: Member; onKiosk(): void }): JSX.Element {
+/** 더보기 → 학부모 가입 코드: 학생 고르기 → 코드 + 안내문, 최근 발급한 코드 목록 */
+function ParentInviteSection({ students }: { students: Student[] }): JSX.Element {
+  const [q, setQ] = useState('')
+  const [picked, setPicked] = useState<string[]>([])
+  const [made, setMade] = useState<{ invite: Invite; names: string } | null>(null)
+  const [recent, setRecent] = useState<Invite[]>([])
+  const [busy, setBusy] = useState(false)
+
+  const loadRecent = useCallback(async () => {
+    const { data } = await supabase.from('invites').select('*').eq('role', 'parent').order('created_at', { ascending: false }).limit(10)
+    setRecent((data as Invite[]) ?? [])
+  }, [])
+  useEffect(() => {
+    loadRecent()
+  }, [loadRecent])
+
+  const active = students.filter((s) => s.active)
+  const list = q ? active.filter((s) => s.name.includes(q) || s.code.includes(q)) : active
+  const pickedKids = active.filter((s) => picked.includes(s.id))
+  const nameOf = (inv: Invite): string =>
+    students.filter((s) => inv.student_ids.includes(s.id)).map((s) => s.name).join('·') || inv.label.replace(/ 가족$/, '')
+
+  const revoke = async (i: Invite): Promise<void> => {
+    if (!confirm(`${i.code} 코드를 취소할까요?\n이미 가입한 학부모는 그대로 유지되고, 이 코드로는 더 가입할 수 없게 됩니다.`)) return
+    await supabase.from('invites').delete().eq('code', i.code)
+    const { data: org } = await supabase.rpc('my_org')
+    await supabase.from('timeline').insert({ org_id: org, kind: 'invite', summary: `${nameOf(i)} 가족 초대 코드 취소 (${i.code})` })
+    if (made?.invite.code === i.code) setMade(null)
+    loadRecent()
+  }
+
+  const create = async (): Promise<void> => {
+    setBusy(true)
+    const inv = await createParentInvite(pickedKids)
+    setBusy(false)
+    if (!inv) return
+    setMade({ invite: inv, names: pickedKids.map((k) => k.name).join('·') })
+    setPicked([])
+    setQ('')
+    loadRecent()
+  }
+
+  return (
+    <section className="card">
+      <h3>👨‍👩‍👧 학부모 가입 코드 만들기</h3>
+      <p className="muted small">아이를 고르고 코드를 만드세요. 형제·자매는 같이 고르면 코드 하나로 연결돼요. 코드 하나로 2명(엄마·아빠)까지 가입할 수 있고 30일 동안 쓸 수 있어요.</p>
+      {active.length === 0 ? (
+        <p className="muted small">먼저 학생 탭에서 학생을 등록해 주세요.</p>
+      ) : (
+        <>
+          {pickedKids.length > 0 && (
+            <div className="picked">
+              {pickedKids.map((k) => (
+                <button key={k.id} className="chip-btn" onClick={() => setPicked(picked.filter((x) => x !== k.id))}>{k.name} ✕</button>
+              ))}
+            </div>
+          )}
+          <input className="search" placeholder="학생 이름·출석번호 검색" value={q} onChange={(e) => setQ(e.target.value)} />
+          <div className="pick-list">
+            {list.map((s) => (
+              <label key={s.id} className="check">
+                <input type="checkbox" checked={picked.includes(s.id)} onChange={(e) => setPicked(e.target.checked ? [...picked, s.id] : picked.filter((x) => x !== s.id))} />
+                {s.name} <span className="muted small">{s.group_name}</span>
+              </label>
+            ))}
+            {list.length === 0 && <p className="muted small">검색 결과가 없습니다.</p>}
+          </div>
+          <button className="primary wide" disabled={busy || pickedKids.length === 0} onClick={create}>
+            {pickedKids.length ? `🔑 ${pickedKids.map((k) => k.name).join('·')} 가족 코드 만들기` : '아이를 먼저 골라 주세요'}
+          </button>
+        </>
+      )}
+      {made && <ShareBox invite={made.invite} studentName={made.names} />}
+
+      {recent.length > 0 && (
+        <>
+          <h3>최근 발급한 코드</h3>
+          <ul className="plain small">
+            {recent.map((i) => {
+              const expired = new Date(i.expires_at) < new Date()
+              const full = i.use_count >= i.max_uses
+              return (
+                <li key={i.code} className="recent-code">
+                  <code>{i.code}</code>
+                  <span className="grow">{nameOf(i)}</span>
+                  <span className={expired || full ? 'muted' : ''}>{expired ? '만료' : full ? '사용 완료' : `${i.use_count}/${i.max_uses}회`}</span>
+                  {!expired && !full && (
+                    <button className="ghost small-btn" onClick={() => setMade({ invite: i, names: nameOf(i) })}>안내문</button>
+                  )}
+                  <button className="ghost small-btn danger" onClick={() => revoke(i)}>취소</button>
+                </li>
+              )
+            })}
+          </ul>
+        </>
+      )}
+    </section>
+  )
+}
+
+function MoreTab({ member, students, onKiosk }: { member: Member; students: Student[]; onKiosk(): void }): JSX.Element {
   const [made, setMade] = useState<{ code: string; role: string } | null>(null)
   const [members, setMembers] = useState<Member[]>([])
   useEffect(() => {
@@ -419,6 +529,8 @@ function MoreTab({ member, onKiosk }: { member: Member; onKiosk(): void }): JSX.
 
   return (
     <div className="page">
+      <ParentInviteSection students={students} />
+
       <section className="card">
         <h3>출석 태블릿</h3>
         <p className="muted small">이 기기를 출석 화면으로 쓰거나, 입구 태블릿 전용 계정을 만드세요. 전용 계정은 학생 명단을 볼 수 없어 더 안전합니다.</p>
