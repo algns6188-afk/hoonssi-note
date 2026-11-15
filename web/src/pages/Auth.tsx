@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { supabase, loginEmail, errText } from '../supabase'
 import { LANGS, useI18n, type Lang } from '../i18n'
 import { InstallBanner, InstallLink } from '../install'
+import { CodeInput } from '../codeInput'
 
 export function LangPicker(): JSX.Element {
   const { lang, setLang } = useI18n()
@@ -121,12 +122,11 @@ function SignupForm(): JSX.Element {
 
   return step === 1 ? (
     <form className="card form" onSubmit={(e) => (e.preventDefault(), checkCode())}>
-      <label>
-        {t.inviteCode}
-        <input className="code-input" autoCapitalize="characters" maxLength={8} value={code}
-          onChange={(e) => setCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))} placeholder="ABCD2345" />
+      <div className="code-box">
+        <div className="code-box-title">{t.codeBox}</div>
+        <CodeInput value={code} onChange={setCode} foreignHint={t.codeForeign} />
         <span className="hint">{t.inviteCodeHint}</span>
-      </label>
+      </div>
       {err && <div className="error">{err}</div>}
       <button className="primary big" disabled={busy || code.length < 6}>{busy ? t.loading : t.next}</button>
     </form>
@@ -165,7 +165,11 @@ export function JoinScreen({ onJoined }: { onJoined(): void }): JSX.Element {
       <form className="card form" onSubmit={(e) => (e.preventDefault(), submit())}>
         <h2>{t.needCodeTitle}</h2>
         <p className="muted">{t.needCodeBody}</p>
-        <label>{t.inviteCode}<input className="code-input" maxLength={8} value={code} onChange={(e) => setCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))} /></label>
+        <div className="code-box">
+          <div className="code-box-title">{t.codeBox}</div>
+          <CodeInput value={code} onChange={setCode} foreignHint={t.codeForeign} />
+          <span className="hint">{t.inviteCodeHint}</span>
+        </div>
         <label>{t.name}<input value={name} onChange={(e) => setName(e.target.value)} placeholder={t.nameHint} /></label>
         {err && <div className="error">{err}</div>}
         <button className="primary big" disabled={code.length < 6}>{t.connect}</button>

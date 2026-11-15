@@ -333,30 +333,52 @@ function ShareBox({ invite, studentName }: { invite: Invite; studentName: string
   const text = shareText(invite.code, studentName)
   const [copied, setCopied] = useState(false)
   return (
-    <div className="share">
+    <div className="share strong">
+      <div className="share-label">🔑 {studentName} 가족 초대 코드</div>
       <div className="share-code">{invite.code}</div>
-      <textarea readOnly value={text} rows={8} />
+      <div className="share-meta">2명까지 가입 · {new Date(invite.expires_at).toLocaleDateString('ko-KR')}까지 사용 가능</div>
+      <ol className="share-steps">
+        <li><b>안내문 복사</b>를 누르세요</li>
+        <li>학부모님 카톡에 <b>붙여넣어</b> 보내세요 (4개 언어가 함께 들어가요)</li>
+      </ol>
       <div className="row">
-        <button className="primary grow" onClick={() => navigator.clipboard.writeText(text).then(() => setCopied(true))}>
-          {copied ? '복사됨 ✓' : '안내문 복사 (카톡에 붙여넣기)'}
+        <button className="primary grow big" onClick={() => navigator.clipboard.writeText(text).then(() => setCopied(true))}>
+          {copied ? '✓ 복사됨 — 카톡에 붙여넣으세요' : '📋 안내문 복사'}
         </button>
-        {'share' in navigator && <button onClick={() => navigator.share({ text }).catch(() => {})}>공유</button>}
+        {'share' in navigator && <button className="big" onClick={() => navigator.share({ text }).catch(() => {})}>공유</button>}
       </div>
+      <details>
+        <summary className="muted small">보낼 안내문 미리 보기</summary>
+        <textarea readOnly value={text} rows={14} />
+      </details>
     </div>
   )
 }
 
 export function shareText(code: string, studentName: string): string {
+  const line = '━━━━━━━━━━━━━━━'
   return [
     `[강철노트] ${studentName} 학부모님 안녕하세요.`,
-    `아래 링크를 열고 "초대 코드로 가입"을 눌러 주세요.`,
+    `출석 알림·수납 확인 앱 가입 안내입니다.`,
     ``,
+    line,
+    `🔑 초대 코드:  ${code}`,
+    line,
+    ``,
+    `① 아래 링크 열기`,
     `🔗 ${APP_URL}`,
-    `🔑 초대 코드 / 邀请码 / Код / Invite code: ${code}`,
+    `② "초대 코드로 가입" 누르기`,
+    `③ 위 초대 코드 입력 (영문 대문자+숫자 8자리)`,
+    `④ 아이디·비밀번호 만들기`,
     ``,
-    `[中文] 请打开上面的链接，点击“用邀请码注册”，输入邀请码。`,
-    `[Русский] Откройте ссылку выше, нажмите «Регистрация по коду» и введите код.`,
-    `[English] Open the link above, tap "Sign up with invite code" and enter the code.`
+    `🇨🇳 邀请码: ${code}`,
+    `打开上面的链接 → 点击“用邀请码注册” → 输入邀请码 → 设置账号和密码`,
+    ``,
+    `🇷🇺 Код приглашения: ${code}`,
+    `Откройте ссылку → «Регистрация по коду» → введите код → создайте логин и пароль`,
+    ``,
+    `🇺🇸 Invite code: ${code}`,
+    `Open the link → "Sign up with invite code" → enter the code → create your ID and password`
   ].join('\n')
 }
 

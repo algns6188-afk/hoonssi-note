@@ -214,3 +214,15 @@ body.dark-top { background: var(--side); }
 .pick-list { max-height: 240px; overflow: auto; display: flex; flex-direction: column; gap: 4px; border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; background: #fff; }
 .pick-list .check { padding: 6px 0; }
 .recent-code { display: flex; align-items: center; gap: 8px; }
+
+/* 초대 코드 강조 */
+.code-box { background: #fff8e6; border: 2px solid #f5c451; border-radius: 14px; padding: 14px; display: flex; flex-direction: column; gap: 8px; }
+.code-box-title { font-weight: 800; font-size: 15px; }
+.code-box .code-input { font-size: 28px; letter-spacing: 6px; border: 2px solid #e6b43a; }
+.code-warn { background: #fdecea; color: var(--danger); border-radius: 8px; padding: 8px 10px; font-size: 13px; font-weight: 600; }
+.share.strong { background: #fff8e6; border: 2px solid #f5c451; border-style: solid; }
+.share-label { font-weight: 800; text-align: center; }
+.share.strong .share-code { font-size: 36px; color: #1b2232; background: #fff; border-radius: 12px; padding: 10px; border: 1px dashed #e6b43a; }
+.share-meta { text-align: center; font-size: 13px; color: var(--muted); }
+.share-steps { margin: 0; padding-left: 20px; font-size: 14px; display: flex; flex-direction: column; gap: 4px; }
+.share details textarea { margin-top: 8px; }
