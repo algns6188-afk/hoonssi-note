@@ -226,3 +226,13 @@ body.dark-top { background: var(--side); }
 .share-meta { text-align: center; font-size: 13px; color: var(--muted); }
 .share-steps { margin: 0; padding-left: 20px; font-size: 14px; display: flex; flex-direction: column; gap: 4px; }
 .share details textarea { margin-top: 8px; }
+
+/* 출석 알림 카드 */
+.notify { display: flex; flex-direction: column; gap: 10px; }
+.notify.on { border-color: #a7e3c9; background: #f3fbf7; }
+.notify-head { display: flex; gap: 12px; align-items: center; }
+.notify-icon { font-size: 28px; }
+.notify-warn { background: #fff4e5; border-radius: 10px; padding: 10px 12px; margin: 0; font-size: 14px; }
+.notice-ok { background: var(--in-soft); color: var(--in); border-radius: 8px; padding: 10px 12px; font-size: 14px; }
+.ok-chip { background: var(--in-soft); color: var(--in); }
+@media (min-width: 900px) { .notify { max-width: 760px; } }

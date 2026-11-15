@@ -3,6 +3,7 @@ import { supabase, hhmm, todayStartIso, type Attendance, type Member, type Stude
 import { dayLabel, useI18n } from '../i18n'
 import { LangPicker } from './Auth'
 import { InstallBanner } from '../install'
+import { NotifyCard } from '../notifyCard'
 
 export default function ParentApp({ member }: { member: Member }): JSX.Element {
   const { t } = useI18n()
@@ -46,6 +47,7 @@ export default function ParentApp({ member }: { member: Member }): JSX.Element {
       </header>
 
       <InstallBanner />
+      <NotifyCard userId={member.user_id} />
 
       {kids === null ? (
         <p className="center muted">{t.loading}</p>

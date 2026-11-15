@@ -64,6 +64,19 @@ const ko = {
   kioskDup: '이미 체크되었어요.',
   kioskExit: '출석 화면 끝내기',
   error: '문제가 생겼습니다. 다시 시도해 주세요.',
+  notifyTitle: '출석 알림',
+  notifyOffBody: '아이가 등원·하원하면 휴대폰으로 바로 알려드려요.',
+  notifyOn: '알림이 켜져 있어요 ✅',
+  notifyEnable: '🔔 알림 받기',
+  notifyTest: '테스트 알림',
+  notifyDisable: '알림 끄기',
+  notifyTestSent: '테스트 알림을 보냈어요. 잠시 후 확인해 보세요.',
+  notifyDenied: '알림이 차단되어 있어요. 휴대폰 설정에서 이 앱(또는 브라우저)의 알림을 허용한 뒤 다시 열어 주세요.',
+  notifyIosInstall: '아이폰은 먼저 홈 화면에 추가하고, 홈 화면의 강철노트 아이콘으로 열어야 알림을 받을 수 있어요.',
+  notifyKakao: '카카오톡 안에서는 알림을 켤 수 없어요. 브라우저에서 열어 주세요.',
+  notifyUnsupported: '이 브라우저에서는 알림을 받을 수 없어요. 안드로이드는 Chrome, 아이폰은 Safari에서 홈 화면에 추가해 주세요.',
+  notifyFail: '알림을 켜지 못했어요.',
+  notifyHowInstall: '홈 화면에 추가하는 법',
   weekdays: '일,월,화,수,목,금,토'
 }
 export type Dict = typeof ko
@@ -124,6 +137,19 @@ const zh: Dict = {
   kioskDup: '已经签到过了。',
   kioskExit: '结束出勤画面',
   error: '出现问题，请重试。',
+  notifyTitle: '出勤通知',
+  notifyOffBody: '孩子到馆、离馆时会立即通知您的手机。',
+  notifyOn: '通知已开启 ✅',
+  notifyEnable: '🔔 接收通知',
+  notifyTest: '测试通知',
+  notifyDisable: '关闭通知',
+  notifyTestSent: '已发送测试通知，请稍后查看。',
+  notifyDenied: '通知已被阻止。请在手机设置中允许本应用（或浏览器）的通知，然后重新打开。',
+  notifyIosInstall: 'iPhone 需要先添加到主屏幕，并从主屏幕的图标打开，才能接收通知。',
+  notifyKakao: '在 KakaoTalk 内无法开启通知，请在浏览器中打开。',
+  notifyUnsupported: '此浏览器无法接收通知。安卓请使用 Chrome，iPhone 请在 Safari 中添加到主屏幕。',
+  notifyFail: '无法开启通知。',
+  notifyHowInstall: '如何添加到主屏幕',
   weekdays: '日,一,二,三,四,五,六'
 }
 
@@ -183,6 +209,19 @@ const ru: Dict = {
   kioskDup: 'Уже отмечено.',
   kioskExit: 'Закрыть экран посещений',
   error: 'Произошла ошибка. Попробуйте ещё раз.',
+  notifyTitle: 'Уведомления о посещении',
+  notifyOffBody: 'Сразу сообщим на телефон, когда ребёнок придёт или уйдёт.',
+  notifyOn: 'Уведомления включены ✅',
+  notifyEnable: '🔔 Получать уведомления',
+  notifyTest: 'Тестовое уведомление',
+  notifyDisable: 'Выключить',
+  notifyTestSent: 'Тестовое уведомление отправлено. Проверьте через минуту.',
+  notifyDenied: 'Уведомления заблокированы. Разрешите уведомления для этого приложения (или браузера) в настройках телефона и откройте снова.',
+  notifyIosInstall: 'На iPhone сначала добавьте приложение на главный экран и открывайте его с иконки — только так приходят уведомления.',
+  notifyKakao: 'Внутри KakaoTalk уведомления включить нельзя. Откройте в браузере.',
+  notifyUnsupported: 'Этот браузер не поддерживает уведомления. На Android используйте Chrome, на iPhone — добавьте на главный экран из Safari.',
+  notifyFail: 'Не удалось включить уведомления.',
+  notifyHowInstall: 'Как добавить на главный экран',
   weekdays: 'Вс,Пн,Вт,Ср,Чт,Пт,Сб'
 }
 
@@ -242,6 +281,19 @@ const en: Dict = {
   kioskDup: 'Already checked.',
   kioskExit: 'Exit attendance screen',
   error: 'Something went wrong. Please try again.',
+  notifyTitle: 'Attendance notifications',
+  notifyOffBody: "We'll notify your phone right away when your child checks in or out.",
+  notifyOn: 'Notifications are on ✅',
+  notifyEnable: '🔔 Turn on notifications',
+  notifyTest: 'Test notification',
+  notifyDisable: 'Turn off',
+  notifyTestSent: 'Test notification sent. Check your phone in a moment.',
+  notifyDenied: 'Notifications are blocked. Allow notifications for this app (or browser) in your phone settings, then reopen.',
+  notifyIosInstall: 'On iPhone, add the app to your home screen first and open it from the home screen icon to receive notifications.',
+  notifyKakao: "Notifications can't be turned on inside KakaoTalk. Please open in your browser.",
+  notifyUnsupported: "This browser can't receive notifications. Use Chrome on Android, or add to home screen from Safari on iPhone.",
+  notifyFail: 'Could not turn on notifications.',
+  notifyHowInstall: 'How to add to home screen',
   weekdays: 'Sun,Mon,Tue,Wed,Thu,Fri,Sat'
 }
 

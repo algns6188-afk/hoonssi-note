@@ -250,7 +250,7 @@ function StudentSheet({ student, all, onClose, reload }: {
 /** 보호자 목록 + 학부모 초대 코드 */
 function FamilySection({ student, all }: { student: Student; all: Student[] }): JSX.Element {
   const { t } = useI18n()
-  const [guardians, setGuardians] = useState<{ user_id: string; name: string; lang: string }[]>([])
+  const [guardians, setGuardians] = useState<{ user_id: string; name: string; lang: string; devices: number }[]>([])
   const [invites, setInvites] = useState<Invite[]>([])
   const [siblings, setSiblings] = useState<string[]>([])
   const [made, setMade] = useState<Invite | null>(null)
@@ -261,7 +261,9 @@ function FamilySection({ student, all }: { student: Student; all: Student[] }): 
     const { data: m } = ids.length
       ? await supabase.from('members').select('user_id,display_name,lang').in('user_id', ids)
       : { data: [] }
-    setGuardians((m ?? []).map((x) => ({ user_id: x.user_id, name: x.display_name, lang: x.lang })))
+    const { data: ps } = await supabase.rpc('guardian_push_status', { p_student: student.id })
+    const dev = new Map(((ps as { user_id: string; devices: number }[]) ?? []).map((p) => [p.user_id, p.devices]))
+    setGuardians((m ?? []).map((x) => ({ user_id: x.user_id, name: x.display_name, lang: x.lang, devices: dev.get(x.user_id) ?? 0 })))
     const { data: inv } = await supabase.from('invites').select('*').eq('role', 'parent').contains('student_ids', [student.id]).order('created_at', { ascending: false })
     setInvites((inv as Invite[]) ?? [])
   }, [student.id])
@@ -284,7 +286,8 @@ function FamilySection({ student, all }: { student: Student; all: Student[] }): 
     <div className="family">
       <h3>보호자</h3>
       {guardians.length === 0 ? <p className="muted small">아직 연결된 보호자가 없습니다.</p> : (
-        <ul className="plain">{guardians.map((g) => <li key={g.user_id}>👤 {g.name || '(이름 없음)'} <span className="muted small">· {LANG_NAME[g.lang] ?? g.lang}</span></li>)}</ul>
+        <ul className="plain">{guardians.map((g) => <li key={g.user_id}>👤 {g.name || '(이름 없음)'} <span className="muted small">· {LANG_NAME[g.lang] ?? g.lang}</span>{' '}
+          {g.devices > 0 ? <span className="chip ok-chip">🔔 알림 켜짐{g.devices > 1 ? ` (${g.devices}대)` : ''}</span> : <span className="chip">🔕 알림 꺼짐</span>}</li>)}</ul>
       )}
 
       <h3>학부모 초대 코드</h3>
