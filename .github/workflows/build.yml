@@ -7,7 +7,7 @@ name: 설치 파일 만들기
 on:
   push:
     branches: [main]
-    paths-ignore: ['**.md', 'docs/**']
+    paths-ignore: ['**.md', 'docs/**', 'web/**', 'supabase/**', '.github/workflows/web.yml']
   workflow_dispatch:
 
 concurrency:
