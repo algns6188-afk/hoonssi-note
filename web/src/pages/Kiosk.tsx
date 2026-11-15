@@ -25,6 +25,18 @@ export default function KioskScreen({ onExit }: { onExit?(): void }): JSX.Elemen
   const [clock, setClock] = useState(new Date())
   const resetTimer = useRef<number | null>(null)
 
+  // 출석 화면에서는 휴대폰 맨 위(상태 표시줄) 색도 화면과 같은 어두운 색으로
+  useEffect(() => {
+    const meta = document.querySelector('meta[name="theme-color"]')
+    const prev = meta?.getAttribute('content')
+    meta?.setAttribute('content', '#17203a')
+    document.body.classList.add('dark-top')
+    return () => {
+      if (prev) meta?.setAttribute('content', prev)
+      document.body.classList.remove('dark-top')
+    }
+  }, [])
+
   useEffect(() => {
     const i = window.setInterval(() => setClock(new Date()), 10_000)
     return () => window.clearInterval(i)

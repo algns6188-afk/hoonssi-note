@@ -193,3 +193,17 @@ code { background: #eef0f4; padding: 1px 6px; border-radius: 4px; }
   .auth { padding-top: 8vh; }
 }
 .share-icon { vertical-align: -4px; margin: 0 2px; }
+
+/* ---------- 아이폰 노치·다이내믹 아일랜드·홈 막대 피하기 ---------- */
+body.dark-top { background: var(--side); }
+.kiosk { padding-top: calc(12px + env(safe-area-inset-top)); padding-left: calc(20px + env(safe-area-inset-left)); padding-right: calc(20px + env(safe-area-inset-right)); }
+.kiosk-top { min-height: 48px; position: relative; z-index: 2; }
+.auth { padding-top: calc(16px + env(safe-area-inset-top)); }
+.sheet { max-height: calc(100vh - env(safe-area-inset-top) - 12px); }
+@media (min-width: 900px) {
+  .sheet { max-height: none; padding-top: calc(24px + env(safe-area-inset-top)); }
+  .tabbar { padding-top: calc(20px + env(safe-area-inset-top)); }
+}
+@media (max-width: 420px) {
+  .kiosk-clock { font-size: 15px; }
+}
