@@ -96,8 +96,8 @@ export default function KioskScreen({ onExit }: { onExit?(): void }): JSX.Elemen
     <div className="kiosk">
       <div className="kiosk-top">
         <span className="kiosk-clock">
-          {clock.toLocaleDateString('ko-KR', { month: 'long', day: 'numeric', weekday: 'short' })}{' '}
-          {clock.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}
+          {clock.toLocaleDateString('ko-KR', { month: 'long', day: 'numeric', weekday: 'short', timeZone: 'Asia/Seoul' })}{' '}
+          {clock.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Seoul' })}
         </span>
         <LangPicker />
         <ExitButton label={t.kioskExit} onExit={onExit ?? (() => supabase.auth.signOut())} />

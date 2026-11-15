@@ -405,7 +405,7 @@ function MoreTab({ member, onKiosk }: { member: Member; onKiosk(): void }): JSX.
     const { data: org } = await supabase.rpc('my_org')
     const code = makeCode()
     const label = role === 'staff' ? '선생님' : '출석 태블릿'
-    const { error } = await supabase.from('invites').insert({ code, org_id: org, role, label, max_uses: 1, expires_at: new Date(Date.now() + 7 * 86400_000).toISOString() })
+    const { error } = await supabase.from('invites').insert({ code, org_id: org, role, label: '', max_uses: 1, expires_at: new Date(Date.now() + 7 * 86400_000).toISOString() })
     if (error) return alert('만들기 실패: ' + errText(error))
     await supabase.from('timeline').insert({ org_id: org, kind: 'invite', summary: `${label} 초대 코드 발급 (${code})` })
     setMade({ code, role: label })
