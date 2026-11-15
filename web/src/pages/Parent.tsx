@@ -4,6 +4,7 @@ import { dayLabel, useI18n } from '../i18n'
 import { LangPicker } from './Auth'
 import { InstallBanner } from '../install'
 import { NotifyCard } from '../notifyCard'
+import { ParentPayments } from './ParentPay'
 
 export default function ParentApp({ member }: { member: Member }): JSX.Element {
   const { t } = useI18n()
@@ -48,6 +49,7 @@ export default function ParentApp({ member }: { member: Member }): JSX.Element {
 
       <InstallBanner />
       <NotifyCard userId={member.user_id} />
+      {kids && kids.length > 0 && <ParentPayments kids={kids} />}
 
       {kids === null ? (
         <p className="center muted">{t.loading}</p>

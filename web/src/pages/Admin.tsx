@@ -5,9 +5,10 @@ import {
 } from '../supabase'
 import { dayLabel, useI18n } from '../i18n'
 import KioskScreen from './Kiosk'
+import BillingTab, { StudentBillingSection, useBaseFee } from './AdminBilling'
 import { InstallBanner, InstallGuide } from '../install'
 
-type Tab = 'today' | 'students' | 'timeline' | 'more'
+type Tab = 'today' | 'students' | 'billing' | 'timeline' | 'more'
 const APP_URL = location.origin + location.pathname
 
 /** 관리자·선생님 화면 (한국어) */
@@ -43,7 +44,7 @@ export default function AdminApp({ member }: { member: Member }): JSX.Element {
       <header className="m-head">
         <div className="logo">강</div>
         <div className="grow">
-          <div className="m-title">{{ today: '오늘 출석', students: '학생 관리', timeline: '타임라인', more: '더보기' }[tab]}</div>
+          <div className="m-title">{{ today: '오늘 출석', students: '학생 관리', billing: '수납 관리', timeline: '타임라인', more: '더보기' }[tab]}</div>
           <div className="muted small">{member.display_name} · {member.role === 'admin' ? '관리자' : '선생님'}</div>
         </div>
       </header>
@@ -51,12 +52,13 @@ export default function AdminApp({ member }: { member: Member }): JSX.Element {
       <InstallBanner />
       {tab === 'today' && <TodayTab students={students} today={today} onKiosk={() => setKiosk(true)} />}
       {tab === 'students' && <StudentsTab students={students} reload={load} />}
+      {tab === 'billing' && <BillingTab students={students} member={member} />}
       {tab === 'timeline' && <TimelineTab />}
       {tab === 'more' && <MoreTab member={member} students={students} onKiosk={() => setKiosk(true)} />}
 
       <nav className="tabbar">
         <div className="side-brand"><div className="logo">강</div>강철노트</div>
-        {([['today', '✅', '출석'], ['students', '🥋', '학생'], ['timeline', '🕒', '타임라인'], ['more', '⋯', '더보기']] as const).map(([id, icon, label]) => (
+        {([['today', '✅', '출석'], ['students', '🥋', '학생'], ['billing', '💳', '수납'], ['timeline', '🕒', '타임라인'], ['more', '⋯', '더보기']] as const).map(([id, icon, label]) => (
           <button key={id} className={tab === id ? 'on' : ''} onClick={() => setTab(id)}>
             <span>{icon}</span>{label}
           </button>
@@ -188,6 +190,7 @@ function StudentSheet({ student, all, onClose, reload }: {
   onClose(): void
   reload(): Promise<void>
 }): JSX.Element {
+  const baseFee = useBaseFee()
   const [name, setName] = useState(student?.name ?? '')
   const [group, setGroup] = useState(student?.group_name ?? '일반부')
   const [code, setCode] = useState(student?.code ?? '')
@@ -241,6 +244,7 @@ function StudentSheet({ student, all, onClose, reload }: {
         {err && <div className="error">{err}</div>}
         <button className="primary big" disabled={busy} onClick={save}>{busy ? '저장 중…' : '저장'}</button>
       </div>
+      {student && <StudentBillingSection student={student as Parameters<typeof StudentBillingSection>[0]['student']} baseFee={baseFee} />}
       {student && <FamilySection student={student} all={all} />}
       {student && <button className="ghost danger" onClick={remove}>학생 삭제</button>}
     </Sheet>
