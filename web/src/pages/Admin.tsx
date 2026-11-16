@@ -8,9 +8,10 @@ import KioskScreen from './Kiosk'
 import BillingTab, { StudentBillingSection, useBaseFee } from './AdminBilling'
 import AssistantBox from './Assistant'
 import { StudentForm, studentLine, type StudentFull } from './StudentForm'
+import ShuttleTab from './Shuttle'
 import { InstallBanner, InstallGuide } from '../install'
 
-type Tab = 'today' | 'students' | 'billing' | 'timeline' | 'more'
+type Tab = 'today' | 'students' | 'billing' | 'shuttle' | 'timeline' | 'more'
 const APP_URL = location.origin + location.pathname
 
 /** 관리자·선생님 화면 (한국어) */
@@ -51,7 +52,7 @@ export default function AdminApp({ member }: { member: Member }): JSX.Element {
       <header className="m-head">
         <div className="logo">강</div>
         <div className="grow">
-          <div className="m-title">{{ today: '오늘 출석', students: '학생 관리', billing: '수납 관리', timeline: '타임라인', more: '더보기' }[tab]}</div>
+          <div className="m-title">{{ today: '오늘 출석', students: '학생 관리', billing: '수납 관리', shuttle: '강철셔틀 · 차량표', timeline: '타임라인', more: '더보기' }[tab]}</div>
           <div className="muted small">{member.display_name} · {member.role === 'admin' ? '관리자' : '선생님'}</div>
         </div>
       </header>
@@ -61,12 +62,13 @@ export default function AdminApp({ member }: { member: Member }): JSX.Element {
       {tab === 'today' && <TodayTab students={students} today={today} absent={absent} onKiosk={() => setKiosk(true)} />}
       {tab === 'students' && <StudentsTab students={students} reload={load} />}
       {tab === 'billing' && <BillingTab students={students} member={member} />}
+      {tab === 'shuttle' && <ShuttleTab students={students} member={member} />}
       {tab === 'timeline' && <TimelineTab />}
       {tab === 'more' && <MoreTab member={member} students={students} onKiosk={() => setKiosk(true)} />}
 
       <nav className="tabbar">
         <div className="side-brand"><div className="logo">강</div>강철노트</div>
-        {([['today', '✅', '출석'], ['students', '🥋', '학생'], ['billing', '💳', '수납'], ['timeline', '🕒', '타임라인'], ['more', '⋯', '더보기']] as const).map(([id, icon, label]) => (
+        {([['today', '✅', '출석'], ['students', '🥋', '학생'], ['billing', '💳', '수납'], ['shuttle', '🚐', '차량'], ['timeline', '🕒', '기록'], ['more', '⋯', '더보기']] as const).map(([id, icon, label]) => (
           <button key={id} className={tab === id ? 'on' : ''} onClick={() => setTab(id)}>
             <span>{icon}</span>{label}
           </button>
@@ -407,7 +409,7 @@ export function shareText(code: string, studentName: string): string {
 
 /* ---------------- 타임라인 ---------------- */
 
-const KIND_ICON: Record<string, string> = { attendance: '✅', member: '👤', invite: '🔑', student: '🥋', payment: '💳' }
+const KIND_ICON: Record<string, string> = { attendance: '✅', member: '👤', invite: '🔑', student: '🥋', payment: '💳', shuttle: '🚐', absence: '🚫', assistant: '🤖', note: '📝' }
 
 function TimelineTab(): JSX.Element {
   const { t } = useI18n()

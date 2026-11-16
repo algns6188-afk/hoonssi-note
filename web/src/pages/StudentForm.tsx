@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase, errText, type Student } from '../supabase'
+import { StudentRides } from './Shuttle'
 
 /** 수련생 상세 정보 (원생 명단 엑셀의 항목들) */
 export interface StudentFull extends Student {
@@ -170,6 +171,7 @@ export function StudentForm({ student, codeHint, groups, onSaved, onError }: {
       <h3>차량</h3>
       <label className="check"><input type="checkbox" checked={f.shuttle_use} onChange={(e) => set('shuttle_use', e.target.checked)} /> 차량 이용</label>
       <label>차량 메모<input value={f.shuttle_note} onChange={(e) => set('shuttle_note', e.target.value)} placeholder="예: 원곡초(승차) / 집(하차)" /></label>
+      {student && <StudentRides studentId={student.id} />}
 
       <h3>기타</h3>
       <label>특이사항<textarea rows={3} value={f.notes} onChange={(e) => set('notes', e.target.value)} /></label>
