@@ -5,6 +5,7 @@ import { LangPicker } from './Auth'
 import { InstallBanner } from '../install'
 import { NotifyCard } from '../notifyCard'
 import { ParentPayments } from './ParentPay'
+import { ParentShuttle } from './ShuttleLive'
 
 export default function ParentApp({ member }: { member: Member }): JSX.Element {
   const { t } = useI18n()
@@ -53,6 +54,7 @@ export default function ParentApp({ member }: { member: Member }): JSX.Element {
 
       <InstallBanner />
       <NotifyCard userId={member.user_id} />
+      {kids && kids.length > 0 && <ParentShuttle kids={kids} />}
       {kids && kids.length > 0 && <ParentPayments kids={kids} />}
 
       {kids === null ? (

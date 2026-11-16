@@ -455,3 +455,56 @@ a.btn.call { background: var(--in-soft); padding: 8px 10px; }
 .bank-grid button { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 10px 4px; font-size: 12px; border: 1px solid var(--line); border-radius: 12px; background: #fff; white-space: nowrap; }
 .bank-dot { width: 34px; height: 34px; border-radius: 10px; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 15px; text-shadow: 0 0 2px rgba(0,0,0,.25); }
 .pay .account { margin-bottom: 12px; }
+
+/* ---------- 강철셔틀 실시간: 노선도 · 지도 · 기사님 화면 ---------- */
+.chip.live { background: #e3f4e6; color: #1f7a3a; font-weight: 700; }
+.live-box { display: flex; flex-direction: column; gap: 10px; margin: 8px 0; }
+.rv { background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 12px; }
+.rv-tabs { display: grid; grid-template-columns: 1fr 1fr; background: #eef3ea; border-radius: 12px; padding: 4px; gap: 4px; }
+.rv-tabs button { border: 0; background: none; padding: 10px; border-radius: 9px; color: #7a8a78; font-weight: 600; }
+.rv-tabs button.on { background: #fff; color: #1f5b45; box-shadow: 0 0 0 2px #9bbf95; }
+.rv-sig { margin: 6px 2px 0; }
+.rv-line { list-style: none; margin: 12px 0 0; padding: 0; position: relative; }
+.rv-line::before { content: ''; position: absolute; left: 17px; top: 18px; bottom: 18px; width: 3px; background: #dfe6dc; }
+.rv-stop { display: flex; gap: 12px; align-items: flex-start; padding: 12px 0; border-bottom: 1px solid #f0f2ee; position: relative; flex-wrap: wrap; }
+.rv-stop:last-child { border-bottom: 0; }
+.rv-dot { width: 36px; height: 36px; flex: none; border-radius: 50%; background: #fff; border: 2px solid #cfd8cb; display: flex; align-items: center; justify-content: center; font-size: 12px; color: #6b7c69; z-index: 1; }
+.rv-stop.done .rv-dot { background: #1f5b45; border-color: #1f5b45; color: #fff; font-weight: 700; }
+.rv-stop.dojang .rv-dot { border-radius: 10px; background: #1f5b45; border-color: #1f5b45; font-size: 16px; }
+.rv-stop.mine { background: #fff8e1; border-radius: 10px; margin: 0 -6px; padding-left: 6px; padding-right: 6px; }
+.rv-stop.mine .rv-dot { border-color: #e0a100; }
+.rv-time { text-align: right; min-width: 70px; font-size: 14px; }
+.rv-kid { font-size: 13px; margin-top: 3px; font-weight: 700; }
+.rv-kid.board { color: #1f7a3a; } .rv-kid.alight { color: #2f6fd6; }
+.rv-bus, .rv-bus-top { width: 100%; margin: 8px 0 0 48px; font-size: 13px; font-weight: 700; color: #1f5b45; background: #e3f4e6; border-radius: 8px; padding: 6px 10px; animation: rvpulse 1.6s ease-in-out infinite; }
+.rv-bus-top { margin: 4px 0 4px 48px; width: auto; list-style: none; }
+@keyframes rvpulse { 50% { opacity: .55; } }
+.rv-map-wrap { position: relative; margin-top: 10px; }
+.rv-map { height: 340px; border-radius: 12px; overflow: hidden; z-index: 0; }
+.rv-map.small-map { height: 240px; }
+.rv-map-btns { position: absolute; top: 8px; right: 8px; z-index: 500; display: flex; gap: 6px; }
+.rv-map-btns button { background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; font-size: 13px; box-shadow: 0 1px 4px rgba(0,0,0,.15); }
+.map-pin { width: 26px; height: 26px; border-radius: 50%; background: #fff; border: 2px solid #1f5b45; color: #1f5b45; font-weight: 800; font-size: 12px; display: flex; align-items: center; justify-content: center; box-shadow: 0 1px 4px rgba(0,0,0,.3); }
+.map-pin.passed { background: #1f5b45; color: #fff; }
+.map-pin.mine { border-color: #e0a100; box-shadow: 0 0 0 4px rgba(224,161,0,.35); }
+.map-pin.dojang { border-radius: 8px; background: #1f5b45; }
+.map-pin.pick { border: 0; background: none; box-shadow: none; font-size: 24px; }
+.map-bus { width: 36px; height: 36px; border-radius: 10px; background: #1f5b45; display: flex; align-items: center; justify-content: center; font-size: 20px; box-shadow: 0 0 0 4px rgba(31,91,69,.25); }
+.pickmap { display: flex; flex-direction: column; gap: 6px; }
+.pshuttle h3 { margin: 0 0 8px; }
+.ps-run { border: 1px solid var(--line); border-radius: 12px; margin-top: 8px; overflow: hidden; }
+.ps-run.open { padding-bottom: 8px; }
+.ps-run .rv { border: 0; padding: 0 10px; }
+.ps-head { width: 100%; display: flex; align-items: center; gap: 10px; padding: 12px; border: 0; background: #fafbf9; text-align: left; }
+.ps-head .rv-time { min-width: 0; text-align: left; }
+.driver { padding: 16px; display: flex; flex-direction: column; gap: 12px; max-width: 640px; margin: 0 auto; }
+.driver-head { display: flex; justify-content: space-between; align-items: center; }
+.driver-head h2 { margin: 2px 0 0; }
+.danger-btn { background: #e2553b; color: #fff; border: 0; border-radius: 10px; padding: 12px 16px; font-weight: 700; }
+.driver-gps { border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 4px; font-size: 16px; }
+.driver-gps.ok { background: #e3f4e6; color: #1f5b45; }
+.driver-gps.wait { background: #fff4e0; color: #8a5a00; }
+.driver-stops { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
+.driver-stops li { display: flex; gap: 12px; align-items: center; background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 12px; cursor: pointer; }
+.driver-stops li.done { background: #f1f7ef; }
+.driver-stops li.done .rv-dot { background: #1f5b45; border-color: #1f5b45; color: #fff; }

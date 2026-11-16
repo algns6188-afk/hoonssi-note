@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase, errText, type Member, type Student } from '../supabase'
+import { DriverMode, PickMap, RouteView, usePlace, useTrips } from './ShuttleLive'
 
 /* ---------------- 데이터 ---------------- */
 
@@ -73,6 +74,9 @@ export default function ShuttleTab({ students, member }: { students: Student[]; 
   const [edit, setEdit] = useState<{ run: Run; rs: RunStop } | null>(null)
   const [sheet, setSheet] = useState<'stops' | 'vehicle' | null>(null)
   const [q, setQ] = useState('')
+  const [driving, setDriving] = useState<Run | null>(null)
+  const { trips, v9: liveOk } = useTrips()
+  const place = usePlace()
 
   const load = useCallback(async () => setData(await loadShuttle()), [])
   useEffect(() => {
@@ -102,6 +106,8 @@ export default function ShuttleTab({ students, member }: { students: Student[]; 
   }, [data, q, students, day])
 
   if (!data) return <p className="center muted">불러오는 중…</p>
+  if (driving) return <DriverMode data={data} run={driving} day={todayDay()} place={place} orgId={member.org_id} onExit={() => setDriving(null)} />
+  const isToday = day === todayDay()
   const runs = data.runs.filter((r) => r.active && has(r.weekdays, day))
   const vehicle = data.vehicles[0]
 
@@ -133,17 +139,28 @@ export default function ShuttleTab({ students, member }: { students: Student[]; 
         const alights = riders.filter((r) => r.action === 'alight').length
         const onBoardMax = peakLoad(data, run, day)
         const over = vehicle && onBoardMax > vehicle.capacity
+        const trip = isToday ? trips.find((t) => t.run_id === run.id) : undefined
         return (
           <section key={run.id} className="card run">
             <button className="run-head" onClick={() => setOpen(open === run.id ? null : run.id)}>
               <span className="run-time">{hm(list[0]?.at_time ?? null)}~{hm(list.at(-1)?.at_time ?? null)}</span>
-              <span className="grow"><b>{run.name}</b> <span className="chip">{KIND[run.kind]}</span></span>
+              <span className="grow"><b>{run.name}</b> <span className="chip">{KIND[run.kind]}</span>
+                {trip && <span className={`chip ${trip.ended_at ? '' : 'live'}`}>{trip.ended_at ? '운행 끝' : '● 운행 중'}</span>}</span>
               <span className="small">
                 {boards > 0 && <>⬆ {boards} </>}{alights > 0 && <>⬇ {alights}</>}
                 <span className={over ? 'danger' : 'muted'}> · 최대 {onBoardMax}명{over ? ` (정원 ${vehicle.capacity} 초과)` : ''}</span>
               </span>
               <span className="muted">{open === run.id ? '▲' : '▼'}</span>
             </button>
+            {open === run.id && (
+              <div className="live-box">
+                {isToday && liveOk && (
+                  <button className="primary wide" onClick={() => setDriving(run)}>{trip && !trip.ended_at ? '🚐 운행 화면 열기 (기사님 폰)' : '▶ 운행 시작 (기사님 폰 GPS)'}</button>
+                )}
+                {!liveOk && <p className="notice small">실시간 위치는 Supabase에서 <b>schema-v12-shuttle-live.sql</b> 을 실행한 뒤 쓸 수 있어요.</p>}
+                {isToday && <RouteView data={data} run={run} day={day} trip={trip} place={place} names={(id) => nameOf(id)} />}
+              </div>
+            )}
             {open === run.id && (
               <ol className="route">
                 {run.kind !== 'to' && <li className="dojang"><span className="rt">출발</span><span>🥋 태권도장 {run.kind === 'mixed' ? '(하원 아이들 승차)' : '승차'}</span></li>}
@@ -289,6 +306,18 @@ function StopsSheet({ data, member, onClose, onSaved }: { data: ShuttleData; mem
   const [name, setName] = useState('')
   const [address, setAddress] = useState('')
   const [wait, setWait] = useState('')
+  const [lat, setLat] = useState<number | null>(null)
+  const [lng, setLng] = useState<number | null>(null)
+  const [placeOpen, setPlaceOpen] = useState(false)
+  const [org, setOrg] = useState<{ lat: number | null; lng: number | null }>({ lat: null, lng: null })
+  useEffect(() => {
+    supabase.rpc('org_place').then(({ data: d }) => { const p = (d as { lat: number | null; lng: number | null }[] | null)?.[0]; if (p) setOrg(p) })
+  }, [])
+  const saveOrg = async (la: number, ln: number): Promise<void> => {
+    setOrg({ lat: la, lng: ln })
+    const { error } = await supabase.from('orgs').update({ lat: la, lng: ln }).eq('id', member.org_id)
+    if (error) setErr('도장 위치 저장 실패: ' + errText(error))
+  }
   const [err, setErr] = useState<string | null>(null)
   const used = (id: string): number => data.runStops.filter((r) => r.stop_id === id).length
   const list = data.stops.filter((s) => !q || [s.name, s.address, s.wait_note].some((x) => x.includes(q)))
@@ -299,11 +328,13 @@ function StopsSheet({ data, member, onClose, onSaved }: { data: ShuttleData; mem
     setName(s?.name ?? '')
     setAddress(s?.address ?? '')
     setWait(s?.wait_note ?? '')
+    setLat(s?.lat ?? null)
+    setLng(s?.lng ?? null)
     setErr(null)
   }
   const save = async (): Promise<void> => {
     if (!name.trim()) return setErr('정류장 이름을 적어 주세요.')
-    const row = { name: name.trim(), address: address.trim(), wait_note: wait.trim() }
+    const row = { name: name.trim(), address: address.trim(), wait_note: wait.trim(), lat, lng }
     const r = editing?.id
       ? await supabase.from('stops').update(row).eq('id', editing.id)
       : await supabase.from('stops').insert({ ...row, org_id: member.org_id })
@@ -315,11 +346,15 @@ function StopsSheet({ data, member, onClose, onSaved }: { data: ShuttleData; mem
   return (
     <Sheet title="📍 정류장" onClose={onClose}>
       <div className="form">
+        <button className="ghost" onClick={() => setPlaceOpen(!placeOpen)}>🥋 도장 위치 {org.lat != null ? '✓' : '(지정 안 됨)'} {placeOpen ? '▲' : '▼'}</button>
+        {placeOpen && <PickMap lat={org.lat} lng={org.lng} onPick={saveOrg} />}
         {formOpen ? (
           <>
             <label>이름<input value={name} onChange={(e) => setName(e.target.value)} /></label>
             <label>주소<input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="원선로47" /></label>
             <label>대기 위치<input value={wait} onChange={(e) => setWait(e.target.value)} placeholder="예: 정문 앞 편의점 쪽" /></label>
+            <div className="small"><b>지도 위치</b> {lat != null ? <span className="ok">✓ 지정됨</span> : <span className="muted">없음 (학부모 지도·자동 "지남" 표시에 필요)</span>}</div>
+            <PickMap lat={lat} lng={lng} onPick={(a, b) => { setLat(a); setLng(b) }} />
             {err && <div className="error">{err}</div>}
             <div className="row"><button className="primary grow" onClick={save}>저장</button><button className="ghost" onClick={() => pick(null)}>취소</button></div>
           </>
@@ -330,7 +365,7 @@ function StopsSheet({ data, member, onClose, onSaved }: { data: ShuttleData; mem
         <ul className="plain">
           {list.map((s) => (
             <li key={s.id} className="item-row" onClick={() => pick(s)}>
-              <span className="grow"><b>{s.name}</b> <span className="muted small">{s.address || '주소 없음'}</span></span>
+              <span className="grow"><b>{s.name}</b> <span className="muted small">{s.address || '주소 없음'}</span>{s.lat == null && <span className="chip">지도 ✗</span>}</span>
               <span className="small muted">운행 {used(s.id)}</span>
             </li>
           ))}
