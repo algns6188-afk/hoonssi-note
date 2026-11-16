@@ -90,6 +90,18 @@ export function ParentPayments({ kids }: { kids: Student[] }): JSX.Element | nul
         <p className="muted">{t.payNone}</p>
       ) : (
         <>
+          {accounts.length > 0 && (
+            <div className="account">
+              {accounts.map(({ label, acc }) => (
+                <AccountCard key={acc.bank_account} label={label} acc={acc} onCopied={() => flash(t.payCopied)} />
+              ))}
+              {/* 계좌가 둘이면 어느 걸 보낼지 몰라서 자동 복사 안 함 → 위 카드에서 먼저 복사 */}
+              <BankApps acc={accounts.length === 1 ? accounts[0].acc : null} onCopied={() => flash(t.payCopied)} />
+              <div className="muted small">{t.payHowTo}</div>
+            </div>
+          )}
+          {missing && <p className="notify-warn">{t.payNoAccount}</p>}
+
           <ul className="bills">
             {open.map((i) => (
               <li key={i.id} className={i.status}>
@@ -126,22 +138,6 @@ export function ParentPayments({ kids }: { kids: Student[] }): JSX.Element | nul
             ))}
           </ul>
 
-          {accounts.length > 0 && (
-            <div className="account">
-              <div className="muted small">{t.payHowTo}</div>
-              {accounts.map(({ label, acc }) => (
-                <div className="account-box" key={acc.bank_account}>
-                  <div>
-                    <div className="small muted">{label}</div>
-                    <b>{acc.bank_name} {acc.bank_account}</b>
-                    <div className="small">{acc.account_holder}</div>
-                  </div>
-                  <button onClick={() => copyText(acc.bank_account.replace(/[^0-9]/g, '')).then(() => flash(t.payCopied))}>{t.payCopy}</button>
-                </div>
-              ))}
-            </div>
-          )}
-          {missing && <p className="notify-warn">{t.payNoAccount}</p>}
         </>
       )}
 
@@ -311,14 +307,9 @@ function PaySheet({ invoice, bank, acc, kidName, onClose, onReport, onCopied }: 
           {kind === 'bank' ? (
             acc ? (
               <>
+                <AccountCard acc={acc} label={t.payAccountFor} onCopied={onCopied} />
+                <BankApps acc={acc} onCopied={onCopied} />
                 <p className="muted small">{t.payBankHint}</p>
-                <div className="account-box">
-                  <div>
-                    <b>{acc.bank_name} {acc.bank_account}</b>
-                    <div className="small">{acc.account_holder}</div>
-                  </div>
-                  <button onClick={() => copyText(acc.bank_account.replace(/[^0-9]/g, '')).then(onCopied)}>{t.payCopy}</button>
-                </div>
                 {isMobile() && <a className="btn toss" href={tossLink(acc, invoice.amount)}>{t.payToss}</a>}
                 <button className="primary big" onClick={onReport}>{t.payReport}</button>
               </>
@@ -328,6 +319,79 @@ function PaySheet({ invoice, bank, acc, kidName, onClose, onReport, onCopied }: 
           )}
           {err && <div className="error">{err}</div>}
         </div>
+      </div>
+    </div>
+  )
+}
+
+/* ---------------- 계좌 카드 · 은행 앱 바로가기 ---------------- */
+
+function AccountCard({ label, acc, onCopied }: { label: string; acc: BankAccount; onCopied(): void }): JSX.Element {
+  const { t } = useI18n()
+  return (
+    <div className="account-card">
+      <div className="small muted">{label}</div>
+      <div className="acc-num">{acc.bank_name} <b>{acc.bank_account}</b></div>
+      <div className="small">{t.payHolder}: {acc.account_holder}</div>
+      <button className="primary acc-copy" onClick={() => copyText(acc.bank_account.replace(/[^0-9]/g, '')).then(onCopied)}>📋 {t.payCopy}</button>
+    </div>
+  )
+}
+
+/** 앱 바로 열기: 확실한 앱은 앱 주소로, 나머지는 스토어의 그 앱 화면(설치돼 있으면 [열기])으로 */
+const BANK_APPS: { name: string; ios?: string; android: string; color: string }[] = [
+  { name: '토스', ios: 'supertoss://', android: 'viva.republica.toss', color: '#0064ff' },
+  { name: '카카오뱅크', ios: 'kakaobank://', android: 'com.kakaobank.channel', color: '#f5c400' },
+  { name: 'KB스타뱅킹', ios: 'kbbank://', android: 'com.kbstar.kbbank', color: '#ffbc00' },
+  { name: '신한 SOL뱅크', android: 'com.shinhan.sbanking', color: '#0046ff' },
+  { name: '우리WON뱅킹', android: 'com.wooribank.smart.npib', color: '#0067ac' },
+  { name: '하나원큐', android: 'com.kebhana.hanapush', color: '#009490' },
+  { name: 'NH올원뱅크', android: 'nh.smart.nhallonepay', color: '#04a54f' },
+  { name: 'IBK i-ONE뱅크', android: 'com.ibk.android.ionebank', color: '#0d4ea3' },
+  { name: '케이뱅크', android: 'com.kbankwith.smartbank', color: '#1b1b6f' },
+  { name: '새마을금고', android: 'com.kfcc.mgsmartbank', color: '#2e7bd6' }
+]
+type BankApp = (typeof BANK_APPS)[number]
+const isIOS = (): boolean => /iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+
+function openBankApp(app: BankApp): void {
+  const store = (): void => {
+    location.href = `itms-apps://search.itunes.apple.com/WebObjects/MZSearch.woa/wa/search?media=software&term=${encodeURIComponent(app.name)}`
+  }
+  if (isIOS()) {
+    if (!app.ios) return store()
+    // 앱이 열리면 화면이 숨겨짐 → 1.5초 뒤에도 그대로면 앱이 없는 것 → 앱스토어
+    const timer = window.setTimeout(() => { if (!document.hidden) store() }, 1500)
+    document.addEventListener('visibilitychange', () => { if (document.hidden) clearTimeout(timer) }, { once: true })
+    location.href = app.ios
+    return
+  }
+  // 안드로이드: 앱이 있으면 실행, 없으면 플레이스토어
+  const fallback = encodeURIComponent(`https://play.google.com/store/apps/details?id=${app.android}`)
+  location.href = `intent://#Intent;action=android.intent.action.MAIN;category=android.intent.category.LAUNCHER;package=${app.android};S.browser_fallback_url=${fallback};end`
+}
+
+function BankApps({ acc, onCopied }: { acc: BankAccount | null; onCopied(): void }): JSX.Element | null {
+  const { t } = useI18n()
+  if (!isMobile()) return null
+  const apps = BANK_APPS
+  const go = async (app: BankApp): Promise<void> => {
+    if (acc) {
+      await copyText(acc.bank_account.replace(/[^0-9]/g, ''))
+      onCopied()
+      window.setTimeout(() => openBankApp(app), 400)
+    } else openBankApp(app)
+  }
+  return (
+    <div className="bank-apps">
+      <div className="small"><b>{t.payOpenApp}</b> <span className="muted">{acc ? t.payOpenAppHint : t.payOpenAppHint2}</span></div>
+      <div className="bank-grid">
+        {apps.map((a) => (
+          <button key={a.name} onClick={() => go(a)}>
+            <span className="bank-dot" style={{ background: a.color }}>{a.name.slice(0, 1)}</span>
+            {a.name}
+          </button>
+        ))}
       </div>
     </div>
   )

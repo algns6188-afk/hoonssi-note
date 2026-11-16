@@ -424,3 +424,14 @@ a.btn.call { background: var(--in-soft); padding: 8px 10px; }
 .pay-opt.on .radio::after { content: ''; position: absolute; inset: 4px; border-radius: 50%; background: var(--brand); }
 .pay-ico { font-size: 18px; }
 @media (min-width: 900px) { .tab-group > button { width: 100%; } }
+
+/* ---------- 학부모: 계좌 카드 · 은행 앱 ---------- */
+.account-card { background: #f2f6ff; border: 1px solid #d6e2ff; border-radius: 14px; padding: 14px; display: flex; flex-direction: column; gap: 4px; }
+.account-card + .account-card { margin-top: 8px; }
+.acc-num { font-size: 17px; } .acc-num b { font-size: 19px; letter-spacing: .3px; }
+.acc-copy { margin-top: 8px; padding: 12px; font-size: 16px; }
+.bank-apps { margin: 10px 0 4px; display: flex; flex-direction: column; gap: 8px; }
+.bank-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 8px; }
+.bank-grid button { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 10px 4px; font-size: 12px; border: 1px solid var(--line); border-radius: 12px; background: #fff; white-space: nowrap; }
+.bank-dot { width: 34px; height: 34px; border-radius: 10px; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 15px; text-shadow: 0 0 2px rgba(0,0,0,.25); }
+.pay .account { margin-bottom: 12px; }
