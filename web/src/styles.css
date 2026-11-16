@@ -508,3 +508,25 @@ a.btn.call { background: var(--in-soft); padding: 8px 10px; }
 .driver-stops li { display: flex; gap: 12px; align-items: center; background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 12px; cursor: pointer; }
 .driver-stops li.done { background: #f1f7ef; }
 .driver-stops li.done .rv-dot { background: #1f5b45; border-color: #1f5b45; color: #fff; }
+
+/* ---------- 차량 변경 신청 · 바뀐 자리 표시 ---------- */
+.chip.changed { background: #fff1d6; color: #9a6200; font-weight: 700; }
+.rider em, .rv-kid em { font-style: normal; font-size: 11px; font-weight: 700; margin-left: 4px; padding: 1px 6px; border-radius: 6px; }
+.rider.tag-skip, .rider.tag-moved { text-decoration: line-through; text-decoration-color: rgba(0,0,0,.45); opacity: .75; background: #f4f4f4; }
+.rider.tag-skip em, .rider.tag-moved em, .rv-kid.tag-skip em, .rv-kid.tag-moved em { text-decoration: none; display: inline-block; background: #fde8e4; color: #c23d22; }
+.rider.tag-add, .rider.tag-new { outline: 2px solid #f0b429; background: #fff8e1; }
+.rider.tag-add em, .rider.tag-new em, .rv-kid.tag-add em, .rv-kid.tag-new em { background: #f0b429; color: #fff; }
+.rv-kid.tag-skip, .rv-kid.tag-moved { text-decoration: line-through; color: #999 !important; }
+.req-box { border: 2px solid #f0b429; }
+.req-box h3 { margin: 0 0 6px; }
+.req-row { display: flex; gap: 10px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.req-row:last-child { border-bottom: 0; }
+.req-row .col { display: flex; flex-direction: column; gap: 4px; }
+.req-from { text-decoration: line-through; color: #999; }
+.req-to { color: #1f7a3a; }
+.chip.danger { background: #fde8e4; color: #c23d22; }
+.my-req { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 8px; }
+.req-line { display: flex; gap: 8px; align-items: center; padding: 6px 0; font-size: 14px; }
+.chip.rq-pending { background: #fff1d6; color: #9a6200; }
+.chip.rq-approved { background: #e3f4e6; color: #1f7a3a; }
+.chip.rq-rejected { background: #fde8e4; color: #c23d22; }

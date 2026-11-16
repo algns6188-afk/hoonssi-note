@@ -3,7 +3,7 @@ import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { supabase, errText } from '../supabase'
 import { useI18n } from '../i18n'
-import { hm, loadShuttle, ridersAt, stopsOn, type Run, type RunStop, type ShuttleData, type Stop } from './Shuttle'
+import { activeRide, describeRequest, hm, loadShuttle, ridersView, stopsOn, type RideRequest, type Run, type RunStop, type ShuttleData, type Stop } from './Shuttle'
 
 /* 강철셔틀 실시간: 노선도 · 지도 경로 · 기사님 운행 모드 */
 
@@ -70,7 +70,8 @@ export function RouteView({ data, run, day, trip, place, names, mineOnly }: {
 }): JSX.Element {
   const { t } = useI18n()
   const [tab, setTab] = useState<'route' | 'map'>('route')
-  const list = stopsOn(data, run, day)
+  const date = kstDate()
+  const list = stopsOn(data, run, day, date)
   const stopOf = (id: string): Stop | undefined => data.stops.find((s) => s.id === id)
   const eta = etaOf(list, trip)
   const lastPassed = list.reduce((n, rs, i) => (trip?.passed[rs.id] ? i : n), -1)
@@ -100,8 +101,8 @@ export function RouteView({ data, run, day, trip, place, names, mineOnly }: {
           {list.map((rs, i) => {
             const st = stopOf(rs.stop_id)
             const passedAt = trip?.passed[rs.id]
-            const kids = ridersAt(data, rs, run, day).map((r) => ({ r, n: names(r.student_id) })).filter((x) => x.n)
-            const mine = kids.length > 0
+            const kids = ridersView(data, rs, run, day, date).map((v) => ({ v, n: names(v.student_id) })).filter((x) => x.n)
+            const mine = kids.some(({ v }) => activeRide(v))
             const e = eta.get(rs.id)
             return (
               <li key={rs.id} className={`rv-stop ${passedAt ? 'done' : ''} ${mine && mineOnly ? 'mine' : ''}`}>
@@ -109,8 +110,14 @@ export function RouteView({ data, run, day, trip, place, names, mineOnly }: {
                 <div className="grow">
                   <b>{st?.name ?? '?'}</b>
                   {st?.wait_note && <div className="muted tiny">{st.wait_note}</div>}
-                  {kids.map(({ r, n }) => (
-                    <div key={r.id} className={`rv-kid ${r.action}`}>{(r.action === 'board' ? t.shBoard : t.shAlight).replace('{name}', n!)}</div>
+                  {kids.map(({ v, n }) => (
+                    <div key={v.key} className={`rv-kid ${v.action} ${v.tag ? 'tag-' + v.tag : ''}`}>
+                      {(v.action === 'board' ? t.shBoard : t.shAlight).replace('{name}', n!)}
+                      {v.tag === 'skip' && <em> {t.rqTagSkip}</em>}
+                      {v.tag === 'add' && <em> {t.rqTagAdd}</em>}
+                      {v.tag === 'moved' && <em> {v.to ? `→ ${v.to}` : t.rqTagStopped}</em>}
+                      {v.tag === 'new' && <em> {t.rqTagNew}</em>}
+                    </div>
                   ))}
                 </div>
                 <div className="rv-time">
@@ -130,7 +137,7 @@ export function RouteView({ data, run, day, trip, place, names, mineOnly }: {
           )}
         </ol>
       ) : (
-        <RouteMap data={data} run={run} list={list} trip={trip} place={place} mineIds={!mineOnly ? new Set() : new Set(list.filter((rs) => ridersAt(data, rs, run, day).some((r) => names(r.student_id))).map((rs) => rs.id))} />
+        <RouteMap data={data} run={run} list={list} trip={trip} place={place} mineIds={!mineOnly ? new Set() : new Set(list.filter((rs) => ridersView(data, rs, run, day, date).some((v) => activeRide(v) && names(v.student_id))).map((rs) => rs.id))} />
       )}
     </div>
   )
@@ -326,7 +333,7 @@ export function DriverMode({ data, run, day, place, orgId, onExit }: { data: Shu
         {list.map((rs, i) => {
           const st = data.stops.find((s) => s.id === rs.stop_id)
           const passed = trip?.passed[rs.id]
-          const kids = ridersAt(data, rs, run, day)
+          const kids = ridersView(data, rs, run, day, kstDate()).filter(activeRide)
           return (
             <li key={rs.id} className={passed ? 'done' : ''} onClick={() => togglePassed(rs)}>
               <span className="rv-dot">{passed ? '✓' : i + 1}</span>
@@ -386,31 +393,44 @@ export function PickMap({ lat, lng, onPick }: { lat: number | null; lng: number 
   )
 }
 
-/* ---------------- 학부모: 오늘 우리 아이가 타는 차량 ---------------- */
+/* ---------------- 학부모: 오늘 우리 아이가 타는 차량 + 변경 신청 ---------------- */
 
 export function ParentShuttle({ kids }: { kids: { id: string; name: string }[] }): JSX.Element | null {
   const { t } = useI18n()
   const [data, setData] = useState<ShuttleData | null>(null)
   const [open, setOpen] = useState<string | null>(null)
+  const [asking, setAsking] = useState(false)
   const { trips } = useTrips()
   const place = usePlace()
+  const load = useCallback(async () => setData(await loadShuttle()), [])
   useEffect(() => {
-    loadShuttle().then(setData)
-  }, [])
+    load()
+    const ch = supabase.channel('parent-rides-' + Math.random().toString(36).slice(2))
+    for (const tb of ['ride_requests', 'ride_exceptions', 'ride_assignments', 'run_stops']) ch.on('postgres_changes', { event: '*', schema: 'public', table: tb }, () => load())
+    ch.subscribe()
+    return () => void supabase.removeChannel(ch)
+  }, [load])
   if (!data) return null
   const day = '일월화수목금토'[new Date(Date.now() + 9 * 3600_000).getUTCDay()]
+  const date = kstDate()
   const kidName = (id: string): string | null => kids.find((k) => k.id === id)?.name ?? null
   const runs = data.runs
     .filter((r) => r.active)
-    .map((run) => ({ run, list: stopsOn(data, run, day) }))
-    .filter(({ run, list }) => list.some((rs) => ridersAt(data, rs, run, day).some((r) => kidName(r.student_id))))
+    .map((run) => ({ run, list: stopsOn(data, run, day, date) }))
+    .filter(({ run, list }) => list.some((rs) => ridersView(data, rs, run, day, date).some((v) => kidName(v.student_id))))
     .sort((a, b) => (a.list[0]?.at_time ?? '').localeCompare(b.list[0]?.at_time ?? ''))
-  if (!runs.length) return null
-  const firstOpen = open ?? (runs.find(({ run }) => trips.some((x) => x.run_id === run.id && !x.ended_at))?.run.id ?? runs[0].run.id)
+  const usesShuttle = data.rides.some((r) => kidName(r.student_id))
+  const myReq = data.requests.filter((q) => kidName(q.student_id) && q.status !== 'canceled').slice(0, 6)
+  if (!runs.length && !usesShuttle && !myReq.length) return null
+  const firstOpen = open ?? (runs.find(({ run }) => trips.some((x) => x.run_id === run.id && !x.ended_at))?.run.id ?? runs[0]?.run.id)
 
   return (
     <section className="card pshuttle">
-      <h3>🚐 {t.shTitle}</h3>
+      <div className="row">
+        <h3 className="grow">🚐 {t.shTitle}</h3>
+        {data.requestsOk && <button className="small-btn" onClick={() => setAsking(true)}>✏️ {t.rqButton}</button>}
+      </div>
+      {runs.length === 0 && <p className="muted small">{t.rqNoRideToday}</p>}
       {runs.map(({ run, list }) => {
         const trip = trips.find((x) => x.run_id === run.id)
         const st = !trip ? t.shBefore : trip.ended_at ? t.shEnded : t.shRunning
@@ -427,6 +447,178 @@ export function ParentShuttle({ kids }: { kids: { id: string; name: string }[] }
           </div>
         )
       })}
+      {myReq.length > 0 && (
+        <div className="my-req">
+          <div className="small"><b>{t.rqMine}</b></div>
+          <ul className="plain">
+            {myReq.map((q) => <ReqLine key={q.id} data={data} q={q} name={kidName(q.student_id)!} onCancel={load} />)}
+          </ul>
+        </div>
+      )}
+      {asking && <RequestSheet data={data} kids={kids.filter((k) => data.rides.some((r) => r.student_id === k.id)).length ? kids.filter((k) => data.rides.some((r) => r.student_id === k.id)) : kids}
+        onClose={() => setAsking(false)} onDone={() => { setAsking(false); load() }} />}
     </section>
   )
 }
+
+function ReqLine({ data, q, name, onCancel }: { data: ShuttleData; q: RideRequest; name: string; onCancel(): void }): JSX.Element {
+  const { t } = useI18n()
+  const d = describeRequest(data, q)
+  const kind = q.kind === 'skip' ? t.rqSkip : q.kind === 'add' ? t.rqAdd : t.rqChange
+  const when = q.scope === 'once' ? (q.date ?? '').slice(5).replace('-', '/') : t.rqAlways
+  const st = { pending: t.rqPending, approved: t.rqApproved, rejected: t.rqRejected, canceled: '' }[q.status]
+  return (
+    <li className={`req-line st-${q.status}`}>
+      <div className="grow">
+        <b>{name}</b> · {kind} · {when}
+        <div className="tiny muted">{d.from}{d.from && d.to ? ' → ' : ''}{d.to}</div>
+        {q.status === 'rejected' && q.decide_note && <div className="tiny danger">{q.decide_note}</div>}
+      </div>
+      <span className={`chip rq-${q.status}`}>{st}</span>
+      {q.status === 'pending' && (
+        <button className="ghost small-btn" onClick={async () => { await supabase.rpc('cancel_ride_request', { p_id: q.id }); onCancel() }}>{t.rqCancel}</button>
+      )}
+    </li>
+  )
+}
+
+/** 학부모 신청서: 누가 · 언제 · 무엇을(안 탐/탐/장소 변경) · 어디 */
+function RequestSheet({ data, kids, onClose, onDone }: { data: ShuttleData; kids: { id: string; name: string }[]; onClose(): void; onDone(): void }): JSX.Element {
+  const { t } = useI18n()
+  const [kid, setKid] = useState(kids[0]?.id ?? '')
+  const [scope, setScope] = useState<'once' | 'always'>('once')
+  const [date, setDate] = useState(kstDate())
+  const [kind, setKind] = useState<'skip' | 'add' | 'change'>('skip')
+  const [from, setFrom] = useState('')
+  const [runId, setRunId] = useState('')
+  const [to, setTo] = useState('')
+  const [action, setAction] = useState<'board' | 'alight'>('board')
+  const [reason, setReason] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+
+  const d = scope === 'once' ? dayOfDateLocal(date) : ''
+  const rsLabel = (rsId: string): string => {
+    const rs = data.runStops.find((x) => x.id === rsId)
+    const run = rs && data.runs.find((r) => r.id === rs.run_id)
+    return rs ? `${run?.name ?? ''} · ${hm(rs.at_time)} ${data.stops.find((s) => s.id === rs.stop_id)?.name ?? ''}` : ''
+  }
+  // 지금 타는 곳 (그날 / 계속이면 전체)
+  const current = data.rides
+    .filter((r) => r.student_id === kid)
+    .map((r) => ({ r, rs: data.runStops.find((x) => x.id === r.run_stop_id)! }))
+    .filter(({ r, rs }) => {
+      if (!rs) return false
+      if (scope === 'always') return true
+      const run = data.runs.find((x) => x.id === rs.run_id)
+      const wd = (r.weekdays ?? rs.weekdays ?? run?.weekdays ?? '').split(',')
+      return wd.includes(d)
+    })
+    .sort((a, b) => a.rs.at_time.localeCompare(b.rs.at_time))
+  const fromRs = data.runStops.find((x) => x.id === from)
+  const runs = data.runs.filter((r) => r.active && (scope === 'always' || r.weekdays.split(',').includes(d)))
+  const targetRun = kind === 'change' ? (runId || fromRs?.run_id || '') : runId
+  const targetStops = data.runStops.filter((rs) => rs.run_id === targetRun && rs.id !== from && (scope === 'always' || !rs.weekdays || rs.weekdays.split(',').includes(d)))
+    .sort((a, b) => a.at_time.localeCompare(b.at_time))
+
+  // 마감 안내 (하루 신청)
+  const depRs = data.runStops.filter((rs) => rs.run_id === (kind === 'add' ? runId : fromRs?.run_id) && (!rs.weekdays || rs.weekdays.split(',').includes(d)))
+    .sort((a, b) => a.at_time.localeCompare(b.at_time))[0]
+  const depRun = depRs && data.runs.find((r) => r.id === depRs.run_id)
+  const dep = scope === 'once' && depRs ? Date.parse(`${date}T${depRs.at_time.slice(0, 5)}:00+09:00`) : null
+  const cut = dep && depRun ? dep - depRun.cutoff_minutes * 60_000 : null
+  const late = !!cut && Date.now() > cut
+  const departed = !!dep && Date.now() > dep
+
+  const ready = kid && (kind === 'add' ? !!to : !!from) && (kind !== 'change' || !!to) && (!late || reason.trim()) && !departed
+  const send = async (): Promise<void> => {
+    setBusy(true)
+    setErr(null)
+    const { data: r, error } = await supabase.rpc('submit_ride_request', {
+      p_student: kid, p_kind: kind, p_scope: scope, p_date: scope === 'once' ? date : null,
+      p_from: kind === 'add' ? null : from, p_to: kind === 'skip' ? null : to,
+      p_action: kind === 'add' ? action : current.find((c) => c.rs.id === from)?.r.action ?? 'board', p_weekdays: null, p_reason: reason.trim()
+    })
+    setBusy(false)
+    const e = error ? errText(error) : (r as { error?: string })?.error
+    if (e) setErr(e === 'departed' ? t.rqDeparted : e === 'reason_required' ? t.rqReasonNeeded : `${t.error} (${e})`)
+    else onDone()
+  }
+
+  return (
+    <div className="sheet-bg" onClick={onClose}>
+      <div className="sheet" onClick={(e) => e.stopPropagation()}>
+        <div className="sheet-head"><h2>✏️ {t.rqButton}</h2><button className="ghost" onClick={onClose}>✕</button></div>
+        <div className="form">
+          {kids.length > 1 && (
+            <div className="pills">{kids.map((k) => <button key={k.id} className={kid === k.id ? 'pill on' : 'pill'} onClick={() => { setKid(k.id); setFrom(''); setTo('') }}>{k.name}</button>)}</div>
+          )}
+          <label>{t.rqWhen}
+            <div className="seg">
+              <button className={scope === 'once' ? 'on' : ''} onClick={() => setScope('once')}>{t.rqOnce}</button>
+              <button className={scope === 'always' ? 'on' : ''} onClick={() => setScope('always')}>{t.rqAlways}</button>
+            </div>
+          </label>
+          {scope === 'once' && (
+            <div className="row">
+              <button className={date === kstDate() ? 'pill on' : 'pill'} onClick={() => setDate(kstDate())}>{t.rqToday}</button>
+              <button className={date === addDay(kstDate(), 1) ? 'pill on' : 'pill'} onClick={() => setDate(addDay(kstDate(), 1))}>{t.rqTomorrow}</button>
+              <input type="date" className="grow" value={date} min={kstDate()} onChange={(e) => e.target.value && setDate(e.target.value)} />
+            </div>
+          )}
+          <div className="pay-opts">
+            {([['skip', '🚫', t.rqSkip], ['add', '✅', t.rqAdd], ['change', '🔄', t.rqChange]] as const).map(([k, ic, label]) => (
+              <button key={k} className={kind === k ? 'pay-opt on' : 'pay-opt'} onClick={() => { setKind(k); setTo(''); setRunId('') }}>
+                <span className="radio" /> <span className="pay-ico">{ic}</span> {label}
+              </button>
+            ))}
+          </div>
+
+          {kind !== 'add' && (
+            <label>{t.rqFrom}
+              <select value={from} onChange={(e) => { setFrom(e.target.value); setTo(''); setRunId('') }}>
+                <option value="">{current.length ? t.rqPick : t.rqNone}</option>
+                {current.map(({ r, rs }) => <option key={r.id} value={rs.id}>{rsLabel(rs.id)} {r.action === 'board' ? t.rqBoard : t.rqAlight}</option>)}
+              </select>
+            </label>
+          )}
+          {kind !== 'skip' && (kind === 'add' || from) && (
+            <>
+              <label>{t.rqRun}
+                <select value={targetRun} onChange={(e) => { setRunId(e.target.value); setTo('') }}>
+                  <option value="">{t.rqPick}</option>
+                  {runs.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+                </select>
+              </label>
+              {targetRun && (
+                <label>{t.rqTo}
+                  <select value={to} onChange={(e) => setTo(e.target.value)}>
+                    <option value="">{t.rqPick}</option>
+                    {targetStops.map((rs) => <option key={rs.id} value={rs.id}>{hm(rs.at_time)} {data.stops.find((s) => s.id === rs.stop_id)?.name}</option>)}
+                  </select>
+                </label>
+              )}
+              {kind === 'add' && (
+                <div className="seg">
+                  <button className={action === 'board' ? 'on' : ''} onClick={() => setAction('board')}>{t.rqBoard}</button>
+                  <button className={action === 'alight' ? 'on' : ''} onClick={() => setAction('alight')}>{t.rqAlight}</button>
+                </div>
+              )}
+            </>
+          )}
+
+          {cut && !departed && <p className={`small ${late ? 'danger' : 'muted'}`}>⏰ {(late ? t.rqLate : t.rqDeadline).replace('{time}', clock(cut))}</p>}
+          {departed && <p className="small danger">{t.rqDeparted}</p>}
+          <label>{t.rqReason}{late ? ' *' : ''}
+            <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder={t.rqReasonHint} />
+          </label>
+          {scope === 'always' && <p className="muted small">{t.rqAlwaysHint}</p>}
+          {err && <div className="error">{err}</div>}
+          <button className="primary big" disabled={busy || !ready} onClick={send}>{busy ? t.loading : t.rqSend}</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+const addDay = (d: string, n: number): string => new Date(Date.parse(d + 'T00:00:00Z') + n * 86400_000).toISOString().slice(0, 10)
+const dayOfDateLocal = (d: string): string => '일월화수목금토'[new Date(d + 'T00:00:00Z').getUTCDay()]

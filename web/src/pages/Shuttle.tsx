@@ -12,7 +12,45 @@ export interface Run {
 }
 export interface RunStop { id: string; run_id: string; stop_id: string; at_time: string; weekdays: string | null; note: string }
 export interface Ride { id: string; run_stop_id: string; student_id: string; action: 'board' | 'alight'; weekdays: string | null; note: string }
-export interface ShuttleData { vehicles: Vehicle[]; stops: Stop[]; runs: Run[]; runStops: RunStop[]; rides: Ride[] }
+export interface RideException { id: string; date: string; run_stop_id: string; student_id: string; action: 'board' | 'alight'; type: 'skip' | 'add'; request_id: string | null; note: string }
+export interface RideRequest {
+  id: string; student_id: string; kind: 'skip' | 'add' | 'change'; scope: 'once' | 'always'; date: string | null
+  from_run_stop_id: string | null; to_run_stop_id: string | null; action: 'board' | 'alight'; weekdays: string | null
+  reason: string; late: boolean; status: 'pending' | 'approved' | 'rejected' | 'canceled'; created_at: string; decided_at: string | null; decide_note: string
+}
+export interface ShuttleData {
+  vehicles: Vehicle[]; stops: Stop[]; runs: Run[]; runStops: RunStop[]; rides: Ride[]
+  exceptions: RideException[]; requests: RideRequest[]; requestsOk: boolean
+}
+/** 이 요일의 가장 가까운 날짜 (오늘 포함) */
+export function nextDateOf(d: string): string {
+  const now = new Date(Date.now() + 9 * 3600_000)
+  const diff = ('일월화수목금토'.indexOf(d) - now.getUTCDay() + 7) % 7
+  return new Date(now.getTime() + diff * 86400_000).toISOString().slice(0, 10)
+}
+export const dayOfDate = (date: string): string => '일월화수목금토'[new Date(date + 'T00:00:00Z').getUTCDay()]
+
+/** 정류장 탑승 명단 + 바뀐 것 표시: skip(그날 안 탐) · add(그날 추가) · moved(다른 곳으로 옮김/중단, 최근 7일) · new(새로 옮겨옴, 최근 7일) */
+export interface RideView { key: string; student_id: string; action: 'board' | 'alight'; tag: '' | 'skip' | 'add' | 'moved' | 'new'; note: string; ride?: Ride; to?: string }
+export function ridersView(data: ShuttleData, rs: RunStop, run: Run, d: string, date: string): RideView[] {
+  const recent = (q: RideRequest): boolean => q.status === 'approved' && q.scope === 'always' && !!q.decided_at && Date.now() - Date.parse(q.decided_at) < 7 * 86400_000
+  const ex = data.exceptions.filter((e) => e.date === date && e.run_stop_id === rs.id)
+  const out: RideView[] = ridersAt(data, rs, run, d).map((r) => {
+    const sk = ex.find((e) => e.type === 'skip' && e.student_id === r.student_id && e.action === r.action)
+    const nw = data.requests.find((q) => recent(q) && q.to_run_stop_id === rs.id && q.student_id === r.student_id)
+    return { key: r.id, student_id: r.student_id, action: r.action, ride: r, tag: sk ? 'skip' : nw ? 'new' : '', note: sk ? sk.note : nw ? nw.reason : '' }
+  })
+  for (const e of ex.filter((e) => e.type === 'add')) {
+    if (!out.some((o) => o.student_id === e.student_id && o.action === e.action)) out.push({ key: e.id, student_id: e.student_id, action: e.action, tag: 'add', note: e.note })
+  }
+  for (const q of data.requests.filter((q) => recent(q) && q.from_run_stop_id === rs.id && q.kind !== 'add')) {
+    if (out.some((o) => o.student_id === q.student_id)) continue
+    const to = q.to_run_stop_id ? data.runStops.find((x) => x.id === q.to_run_stop_id) : undefined
+    out.push({ key: 'm' + q.id, student_id: q.student_id, action: q.action, tag: 'moved', note: q.reason, to: to ? `${hm(to.at_time)} ${data.stops.find((s) => s.id === to.stop_id)?.name ?? ''}` : '' })
+  }
+  return out
+}
+export const activeRide = (v: RideView): boolean => v.tag !== 'skip' && v.tag !== 'moved'
 
 export const DAYS = ['월', '화', '수', '목', '금', '토']
 export const hm = (t: string | null): string => (t ? t.slice(0, 5) : '')
@@ -24,10 +62,11 @@ export function rideOn(r: Ride, rs: RunStop, run: Run, d: string): boolean {
   return (r.weekdays ? r.weekdays.split(',') : rs.weekdays ? rs.weekdays.split(',') : run.weekdays.split(',')).includes(d)
 }
 /** 그 요일의 운행 정류장 (시간순) */
-export function stopsOn(data: ShuttleData, run: Run, d: string): RunStop[] {
+export function stopsOn(data: ShuttleData, run: Run, d: string, date?: string): RunStop[] {
   return data.runStops
     .filter((rs) => rs.run_id === run.id)
-    .filter((rs) => (has(rs.weekdays, d) && has(run.weekdays, d)) || data.rides.some((r) => r.run_stop_id === rs.id && rideOn(r, rs, run, d)))
+    .filter((rs) => (has(rs.weekdays, d) && has(run.weekdays, d)) || data.rides.some((r) => r.run_stop_id === rs.id && rideOn(r, rs, run, d)) ||
+      (!!date && data.exceptions.some((e) => e.date === date && e.run_stop_id === rs.id && e.type === 'add')))
     .sort((a, b) => a.at_time.localeCompare(b.at_time))
 }
 /** 그 요일 운행 중 한 번에 가장 많이 타고 있는 인원 (도장에서 탄 하원 아이 → 정류장 순서대로 내리고 탐) */
@@ -50,16 +89,21 @@ export function ridersAt(data: ShuttleData, rs: RunStop, run: Run, d: string): R
 }
 
 export async function loadShuttle(): Promise<ShuttleData> {
-  const [v, s, r, rs, ra] = await Promise.all([
+  const from = new Date(Date.now() + 9 * 3600_000 - 86400_000).toISOString().slice(0, 10)
+  const since = new Date(Date.now() - 14 * 86400_000).toISOString()
+  const [v, s, r, rs, ra, ex, rq] = await Promise.all([
     supabase.from('vehicles').select('*').order('name'),
     supabase.from('stops').select('*').order('name'),
     supabase.from('runs').select('*').order('sort'),
     supabase.from('run_stops').select('*'),
-    supabase.from('ride_assignments').select('*')
+    supabase.from('ride_assignments').select('*'),
+    supabase.from('ride_exceptions').select('*').gte('date', from),
+    supabase.from('ride_requests').select('*').or(`status.eq.pending,created_at.gte.${since}`).order('created_at', { ascending: false })
   ])
   return {
     vehicles: (v.data as Vehicle[]) ?? [], stops: (s.data as Stop[]) ?? [], runs: (r.data as Run[]) ?? [],
-    runStops: (rs.data as RunStop[]) ?? [], rides: (ra.data as Ride[]) ?? []
+    runStops: (rs.data as RunStop[]) ?? [], rides: (ra.data as Ride[]) ?? [],
+    exceptions: (ex.data as RideException[]) ?? [], requests: (rq.data as RideRequest[]) ?? [], requestsOk: !rq.error
   }
 }
 
@@ -82,7 +126,7 @@ export default function ShuttleTab({ students, member }: { students: Student[]; 
   useEffect(() => {
     load()
     const ch = supabase.channel('shuttle-admin')
-    for (const t of ['runs', 'run_stops', 'ride_assignments', 'stops', 'vehicles']) ch.on('postgres_changes', { event: '*', schema: 'public', table: t }, () => load())
+    for (const t of ['runs', 'run_stops', 'ride_assignments', 'stops', 'vehicles', 'ride_requests', 'ride_exceptions']) ch.on('postgres_changes', { event: '*', schema: 'public', table: t }, () => load())
     ch.subscribe()
     return () => void supabase.removeChannel(ch)
   }, [load])
@@ -108,6 +152,8 @@ export default function ShuttleTab({ students, member }: { students: Student[]; 
   if (!data) return <p className="center muted">불러오는 중…</p>
   if (driving) return <DriverMode data={data} run={driving} day={todayDay()} place={place} orgId={member.org_id} onExit={() => setDriving(null)} />
   const isToday = day === todayDay()
+  const date = nextDateOf(day)
+  const pending = data.requests.filter((q) => q.status === 'pending')
   const runs = data.runs.filter((r) => r.active && has(r.weekdays, day))
   const vehicle = data.vehicles[0]
 
@@ -120,6 +166,8 @@ export default function ShuttleTab({ students, member }: { students: Student[]; 
         <button className="ghost small-btn" onClick={() => setSheet('stops')}>📍 정류장 {data.stops.length}</button>
         <button className="ghost small-btn" onClick={() => setSheet('vehicle')}>🚐 {vehicle?.name ?? '차량'}</button>
       </div>
+      <p className="muted small">{date.slice(5).replace('-', '/')}({day}) 기준 · 하루 변경(안 탐·추가)과 최근 7일 안에 바뀐 자리가 표시돼요.</p>
+      {!data.requestsOk && <p className="notice small">학부모 차량 변경 신청은 Supabase에서 <b>schema-v13-ride-requests.sql</b> 을 실행한 뒤 쓸 수 있어요.</p>}
       <input className="search" placeholder="학생 이름으로 찾기 (그 요일 차량)" value={q} onChange={(e) => setQ(e.target.value)} />
       {q.trim() && (
         <ul className="plain found">
@@ -132,9 +180,12 @@ export default function ShuttleTab({ students, member }: { students: Student[]; 
         </ul>
       )}
 
+      {pending.length > 0 && <RequestsBox data={data} requests={pending} nameOf={nameOf} reload={load} />}
+
       {runs.map((run) => {
-        const list = stopsOn(data, run, day)
-        const riders = list.flatMap((rs) => ridersAt(data, rs, run, day))
+        const list = stopsOn(data, run, day, date)
+        const riders = list.flatMap((rs) => ridersView(data, rs, run, day, date)).filter(activeRide)
+        const changed = list.flatMap((rs) => ridersView(data, rs, run, day, date)).filter((v) => v.tag).length
         const boards = riders.filter((r) => r.action === 'board').length
         const alights = riders.filter((r) => r.action === 'alight').length
         const onBoardMax = peakLoad(data, run, day)
@@ -145,7 +196,8 @@ export default function ShuttleTab({ students, member }: { students: Student[]; 
             <button className="run-head" onClick={() => setOpen(open === run.id ? null : run.id)}>
               <span className="run-time">{hm(list[0]?.at_time ?? null)}~{hm(list.at(-1)?.at_time ?? null)}</span>
               <span className="grow"><b>{run.name}</b> <span className="chip">{KIND[run.kind]}</span>
-                {trip && <span className={`chip ${trip.ended_at ? '' : 'live'}`}>{trip.ended_at ? '운행 끝' : '● 운행 중'}</span>}</span>
+                {trip && <span className={`chip ${trip.ended_at ? '' : 'live'}`}>{trip.ended_at ? '운행 끝' : '● 운행 중'}</span>}
+                {changed > 0 && <span className="chip changed">변경 {changed}</span>}</span>
               <span className="small">
                 {boards > 0 && <>⬆ {boards} </>}{alights > 0 && <>⬇ {alights}</>}
                 <span className={over ? 'danger' : 'muted'}> · 최대 {onBoardMax}명{over ? ` (정원 ${vehicle.capacity} 초과)` : ''}</span>
@@ -165,7 +217,7 @@ export default function ShuttleTab({ students, member }: { students: Student[]; 
               <ol className="route">
                 {run.kind !== 'to' && <li className="dojang"><span className="rt">출발</span><span>🥋 태권도장 {run.kind === 'mixed' ? '(하원 아이들 승차)' : '승차'}</span></li>}
                 {list.map((rs) => {
-                  const rr = ridersAt(data, rs, run, day)
+                  const rr = ridersView(data, rs, run, day, date)
                   const st = stopOf(rs.stop_id)
                   return (
                     <li key={rs.id} onClick={() => setEdit({ run, rs })}>
@@ -174,9 +226,16 @@ export default function ShuttleTab({ students, member }: { students: Student[]; 
                         <b>{st?.name}</b> {st?.address && <span className="muted small">{st.address}</span>}
                         {rs.weekdays && <span className="chip">{rs.weekdays.replace(/,/g, '')}</span>}
                         <div className="riders">
-                          {rr.map((r) => (
-                            <span key={r.id} className={`rider ${r.action}`}>
-                              {r.action === 'board' ? '⬆' : '⬇'} {nameOf(r.student_id)}{r.weekdays ? <small>({r.weekdays.replace(/,/g, '')})</small> : null}{r.note && <small> · {r.note}</small>}
+                          {rr.map((v) => (
+                            <span key={v.key} className={`rider ${v.action} ${v.tag ? 'tag-' + v.tag : ''}`} title={v.note}>
+                              {v.action === 'board' ? '⬆' : '⬇'} {nameOf(v.student_id)}
+                              {v.ride?.weekdays ? <small>({v.ride.weekdays.replace(/,/g, '')})</small> : null}
+                              {v.tag === 'skip' && <em>{date.slice(5).replace('-', '/')} 안 탐</em>}
+                              {v.tag === 'add' && <em>{date.slice(5).replace('-', '/')} 추가</em>}
+                              {v.tag === 'moved' && <em>{v.to ? `→ ${v.to} 로 변경` : '이용 중단'}</em>}
+                              {v.tag === 'new' && <em>새로 변경됨</em>}
+                              {v.note && v.tag && <small> · {v.note}</small>}
+                              {!v.tag && v.ride?.note && <small> · {v.ride.note}</small>}
                             </span>
                           ))}
                           {rr.length === 0 && <span className="muted small">이 요일엔 타는 아이 없음</span>}
@@ -442,5 +501,77 @@ export function StudentRides({ studentId }: { studentId: string }): JSX.Element 
         )
       })}
     </ul>
+  )
+}
+
+/* ---------------- 학부모 차량 변경 신청 → 승인/거절 ---------------- */
+
+export function describeRequest(data: ShuttleData, q: RideRequest): { what: string; when: string; from: string; to: string } {
+  const label = (id: string | null): string => {
+    const rs = id ? data.runStops.find((x) => x.id === id) : undefined
+    if (!rs) return ''
+    const run = data.runs.find((r) => r.id === rs.run_id)
+    return `${run?.name ?? ''} ${hm(rs.at_time)} ${data.stops.find((s) => s.id === rs.stop_id)?.name ?? ''}`
+  }
+  return {
+    what: q.kind === 'skip' ? '🚫 안 탐' : q.kind === 'add' ? '✅ 탑승' : '🔄 장소 변경',
+    when: q.scope === 'once' ? `${q.date?.slice(5).replace('-', '/')}(${q.date ? dayOfDate(q.date) : ''}) 하루` : `계속${q.weekdays ? ` (${q.weekdays.replace(/,/g, '')})` : ''}`,
+    from: label(q.from_run_stop_id),
+    to: label(q.to_run_stop_id) + (q.kind === 'add' ? (q.action === 'board' ? ' 승차' : ' 하차') : '')
+  }
+}
+
+function RequestsBox({ data, requests, nameOf, reload }: { data: ShuttleData; requests: RideRequest[]; nameOf(id: string): string; reload(): Promise<void> }): JSX.Element {
+  const [busy, setBusy] = useState<string | null>(null)
+  const vehicle = data.vehicles[0]
+  const decide = async (q: RideRequest, ok: boolean): Promise<void> => {
+    let note = ''
+    if (!ok) {
+      const r = window.prompt('거절 사유 (학부모에게 보여요, 비워도 돼요)', '')
+      if (r === null) return
+      note = r
+    } else if (q.to_run_stop_id && vehicle) {
+      // 정원 확인: 그날(또는 그 요일) 최대 인원 + 1
+      const rs = data.runStops.find((x) => x.id === q.to_run_stop_id)
+      const run = rs && data.runs.find((r) => r.id === rs.run_id)
+      const d = q.date ? dayOfDate(q.date) : todayDay()
+      if (run && peakLoad(data, run, d) + 1 > vehicle.capacity &&
+        !window.confirm(`${run.name} 정원(${vehicle.capacity}명)을 넘을 수 있어요. 그래도 승인할까요?`)) return
+    }
+    setBusy(q.id)
+    const { data: r, error } = await supabase.rpc('decide_ride_request', { p_id: q.id, p_ok: ok, p_note: note })
+    setBusy(null)
+    const e = error ? errText(error) : (r as { error?: string })?.error
+    if (e) alert('처리 실패: ' + (e === 'already' ? '이미 처리된 신청이에요.' : e))
+    await reload()
+  }
+  return (
+    <section className="card req-box">
+      <h3>📮 학부모 차량 변경 신청 {requests.length}건</h3>
+      <ul className="plain">
+        {requests.map((q) => {
+          const d = describeRequest(data, q)
+          return (
+            <li key={q.id} className="req-row">
+              <div className="grow">
+                <b>{nameOf(q.student_id)}</b> <span className="chip">{d.what}</span> <span className="small">{d.when}</span>
+                {q.late && <span className="chip danger">마감 후</span>}
+                <div className="small">
+                  {d.from && <span className="req-from">{d.from}</span>}
+                  {d.from && d.to && ' → '}
+                  {d.to && <b className="req-to">{d.to}</b>}
+                </div>
+                {q.reason && <div className="muted small">사유: {q.reason}</div>}
+              </div>
+              <div className="col">
+                <button className="primary small-btn" disabled={busy === q.id} onClick={() => decide(q, true)}>승인</button>
+                <button className="ghost small-btn" disabled={busy === q.id} onClick={() => decide(q, false)}>거절</button>
+              </div>
+            </li>
+          )
+        })}
+      </ul>
+      <p className="muted tiny">승인하면 차량표에 바로 반영되고, 바뀐 자리에 표시돼요. (하루 변경은 그날만, "계속"은 차량표 자체가 바뀜)</p>
+    </section>
   )
 }
