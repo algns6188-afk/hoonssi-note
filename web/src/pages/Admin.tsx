@@ -7,6 +7,7 @@ import { dayLabel, useI18n } from '../i18n'
 import KioskScreen from './Kiosk'
 import BillingTab, { StudentBillingSection, useBaseFee } from './AdminBilling'
 import AssistantBox from './Assistant'
+import { StudentForm, studentLine, type StudentFull } from './StudentForm'
 import { InstallBanner, InstallGuide } from '../install'
 
 type Tab = 'today' | 'students' | 'billing' | 'timeline' | 'more'
@@ -155,27 +156,49 @@ function TodayTab({ students, today, absent, onKiosk }: { students: Student[]; t
 
 function StudentsTab({ students, reload }: { students: Student[]; reload(): Promise<void> }): JSX.Element {
   const [q, setQ] = useState('')
+  const [session, setSession] = useState<string>('전체')
   const [showInactive, setShowInactive] = useState(false)
   const [editing, setEditing] = useState<Student | 'new' | null>(null)
-  const list = students
-    .filter((s) => showInactive || s.active)
-    .filter((s) => !q || s.name.includes(q) || s.code.includes(q) || s.group_name.includes(q))
+  const all = students as StudentFull[]
+  const base = all.filter((s) => showInactive || s.active)
+  const sessions = ['전체', ...[1, 2, 3, 4, 5, 6].filter((n) => base.some((s) => s.session_no === n)).map((n) => `${n}부`), ...(base.some((s) => !s.session_no) ? ['미지정'] : []), '차량', '국기원']
+  const list = base
+    .filter((s) =>
+      session === '전체' ? true : session === '미지정' ? !s.session_no : session === '차량' ? s.shuttle_use : session === '국기원' ? !!s.temp_class : s.session_no === Number(session[0]))
+    .filter((s) => !q || [s.name, s.code, s.group_name, s.school, s.grade, s.class_name, s.address].some((x) => x?.includes(q)))
+    .sort((a, b) => a.name.localeCompare(b.name, 'ko'))
 
   return (
     <div className="page">
-      <button className="primary big wide" onClick={() => setEditing('new')}>+ 학생 등록</button>
-      <input className="search" placeholder="이름·출석번호·부 검색" value={q} onChange={(e) => setQ(e.target.value)} />
+      <div className="row wrap">
+        <button className="primary grow" onClick={() => setEditing('new')}>+ 학생 등록</button>
+        <span className="muted small">재원 {all.filter((s) => s.active).length}명</span>
+      </div>
+      <input className="search" placeholder="이름·출석번호·학교·학년·주소 검색" value={q} onChange={(e) => setQ(e.target.value)} />
+      <div className="pills">
+        {sessions.map((g) => (
+          <button key={g} className={g === session ? 'pill on' : 'pill'} onClick={() => setSession(g)}>
+            {g}<span className="pill-count">{g === '전체' ? base.length : g === '미지정' ? base.filter((s) => !s.session_no).length : g === '차량' ? base.filter((s) => s.shuttle_use).length : g === '국기원' ? base.filter((s) => s.temp_class).length : base.filter((s) => s.session_no === Number(g[0])).length}</span>
+          </button>
+        ))}
+      </div>
       <label className="check"><input type="checkbox" checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)} /> 퇴관한 학생도 보기</label>
       <ul className="list">
         {list.map((s) => (
           <li key={s.id}>
             <button className="row-btn" onClick={() => setEditing(s)}>
-              <span className="grow"><b>{s.name}</b> {!s.active && <span className="chip">퇴관</span>}<br /><span className="muted small">{s.group_name || '부 없음'}</span></span>
+              <span className="grow">
+                <b>{s.name}</b> {!s.active && <span className="chip">퇴관</span>}
+                {s.temp_class && <span className="chip accent">{s.temp_class}</span>}
+                {s.shuttle_use && <span title="차량 이용"> 🚐</span>}
+                <br /><span className="muted small">{studentLine(s) || s.group_name || '정보 없음'}</span>
+              </span>
               <span className="code-chip">{s.code}</span>
             </button>
           </li>
         ))}
       </ul>
+      {list.length === 0 && <p className="muted center">해당하는 학생이 없습니다.</p>}
       {editing && (
         <StudentSheet
           student={editing === 'new' ? null : editing}
@@ -203,39 +226,16 @@ function StudentSheet({ student, all, onClose, reload }: {
   reload(): Promise<void>
 }): JSX.Element {
   const baseFee = useBaseFee()
-  const [name, setName] = useState(student?.name ?? '')
-  const [group, setGroup] = useState(student?.group_name ?? '일반부')
-  const [code, setCode] = useState(student?.code ?? '')
-  const [active, setActive] = useState(student?.active ?? true)
   const [err, setErr] = useState<string | null>(null)
-  const [busy, setBusy] = useState(false)
-  const groups = [...new Set(['일반부', '입시부', ...all.map((s) => s.group_name).filter(Boolean)])]
+  const [codeHint, setCodeHint] = useState('')
+  const groups = [...new Set(['초등부', '유치부', '중고등', '선수단', '입시반', ...all.map((s) => s.group_name).filter(Boolean)])]
 
   useEffect(() => {
-    if (!student) uniqueCode(all.map((s) => s.code)).then(setCode)
+    if (!student) uniqueCode(all.map((s) => s.code)).then(setCodeHint)
   }, [student, all])
 
-  const save = async (): Promise<void> => {
-    if (!name.trim()) return setErr('이름을 입력하세요.')
-    if (!/^\d{4,6}$/.test(code)) return setErr('출석번호는 숫자 4~6자리로 정해 주세요.')
-    setBusy(true)
-    setErr(null)
-    const { data: org } = await supabase.rpc('my_org')
-    const row = { name: name.trim(), group_name: group.trim(), code, active }
-    const { error } = student
-      ? await supabase.from('students').update(row).eq('id', student.id)
-      : await supabase.from('students').insert({ ...row, org_id: org })
-    setBusy(false)
-    if (error) return setErr(/duplicate|unique/i.test(error.message) ? '이미 다른 학생이 쓰는 출석번호입니다.' : errText(error))
-    if (!student) {
-      await supabase.from('timeline').insert({ org_id: org, kind: 'student', summary: `${name.trim()} 학생 등록 (${group} · 출석번호 ${code})` })
-    }
-    await reload()
-    onClose()
-  }
-
   const remove = async (): Promise<void> => {
-    if (!student || !confirm(`${student.name} 학생을 완전히 삭제할까요?\n출석 기록도 함께 지워집니다. 그만둔 학생은 '퇴관'으로 두는 것을 권장합니다.`)) return
+    if (!student || !confirm(`${student.name} 학생을 완전히 삭제할까요?\n출석·수납 기록도 함께 지워집니다. 그만둔 학생은 '퇴관'으로 두는 것을 권장합니다.`)) return
     await supabase.from('students').delete().eq('id', student.id)
     await reload()
     onClose()
@@ -243,19 +243,23 @@ function StudentSheet({ student, all, onClose, reload }: {
 
   return (
     <Sheet title={student ? student.name : '새 학생'} onClose={onClose}>
-      <div className="form">
-        <label>이름<input value={name} onChange={(e) => setName(e.target.value)} autoFocus={!student} /></label>
-        <label>부<input list="groups" value={group} onChange={(e) => setGroup(e.target.value)} /></label>
-        <datalist id="groups">{groups.map((g) => <option key={g} value={g} />)}</datalist>
-        <label>출석번호 <span className="hint">(아이가 태블릿에 누르는 번호)</span>
-          <input inputMode="numeric" value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))} />
-        </label>
-        {student && (
-          <label className="check"><input type="checkbox" checked={!active} onChange={(e) => setActive(!e.target.checked)} /> 퇴관 (출석 화면·명단에서 숨김)</label>
-        )}
-        {err && <div className="error">{err}</div>}
-        <button className="primary big" disabled={busy} onClick={save}>{busy ? '저장 중…' : '저장'}</button>
-      </div>
+      {student && <p className="muted small sheet-sub">{studentLine(student as StudentFull)}</p>}
+      <StudentForm
+        student={student as StudentFull | null}
+        codeHint={codeHint}
+        groups={groups}
+        onError={setErr}
+        onSaved={async ({ name, isNew }) => {
+          setErr(null)
+          if (isNew) {
+            const { data: org } = await supabase.rpc('my_org')
+            await supabase.from('timeline').insert({ org_id: org, kind: 'student', summary: `${name} 학생 등록` })
+          }
+          await reload()
+          onClose()
+        }}
+      />
+      {err && <div className="error">{err}</div>}
       {student && <StudentBillingSection student={student as Parameters<typeof StudentBillingSection>[0]['student']} baseFee={baseFee} />}
       {student && <FamilySection student={student} all={all} />}
       {student && <button className="ghost danger" onClick={remove}>학생 삭제</button>}
