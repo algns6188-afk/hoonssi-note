@@ -10,6 +10,7 @@ export default function ParentApp({ member }: { member: Member }): JSX.Element {
   const { t } = useI18n()
   const [kids, setKids] = useState<Student[] | null>(null)
   const [records, setRecords] = useState<Attendance[]>([])
+  const [absences, setAbsences] = useState<{ student_id: string; date: string; reason: string }[]>([])
 
   const load = useCallback(async () => {
     const since = new Date(Date.now() - 14 * 86400_000).toISOString()
@@ -19,6 +20,9 @@ export default function ParentApp({ member }: { member: Member }): JSX.Element {
     ])
     setKids((s.data as Student[]) ?? [])
     setRecords((a.data as Attendance[]) ?? [])
+    const from = new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 10)
+    const { data: ab } = await supabase.from('absences').select('student_id,date,reason').gte('date', from).order('date')
+    setAbsences((ab as { student_id: string; date: string; reason: string }[]) ?? [])
   }, [])
 
   useEffect(() => {
@@ -57,7 +61,7 @@ export default function ParentApp({ member }: { member: Member }): JSX.Element {
         <p className="center muted">{t.noRecords}</p>
       ) : (
         <div className="kids">
-          {kids.map((k) => <KidCard key={k.id} kid={k} records={records.filter((r) => r.student_id === k.id)} />)}
+          {kids.map((k) => <KidCard key={k.id} kid={k} records={records.filter((r) => r.student_id === k.id)} absences={absences.filter((a) => a.student_id === k.id)} />)}
         </div>
       )}
 
@@ -66,7 +70,7 @@ export default function ParentApp({ member }: { member: Member }): JSX.Element {
   )
 }
 
-function KidCard({ kid, records }: { kid: Student; records: Attendance[] }): JSX.Element {
+function KidCard({ kid, records, absences }: { kid: Student; records: Attendance[]; absences: { date: string; reason: string }[] }): JSX.Element {
   const { t } = useI18n()
   const start = todayStartIso()
   const today = records.filter((r) => r.at >= start)
@@ -92,6 +96,13 @@ function KidCard({ kid, records }: { kid: Student; records: Attendance[] }): JSX
           {status === 'none' ? t.notArrived : status === 'in' ? `${t.arrived} ${hhmm(lastIn!.at)}` : `${t.left} ${hhmm(lastOut!.at)}`}
         </span>
       </div>
+      {absences.length > 0 && (
+        <div className="absence-list">
+          {absences.map((a) => (
+            <div key={a.date}>🚫 {t.absent} {Number(a.date.slice(5, 7))}/{Number(a.date.slice(8, 10))}{a.reason ? ` · ${a.reason}` : ''}</div>
+          ))}
+        </div>
+      )}
       <div className="today-row">
         <div><span className="muted small">{t.arrived}</span><b>{lastIn ? hhmm(lastIn.at) : '–'}</b></div>
         <div><span className="muted small">{t.left}</span><b>{lastOut ? hhmm(lastOut.at) : '–'}</b></div>

@@ -285,3 +285,19 @@ a.btn.toss { background: #0064ff; color: #fff; }
 .billing .stats3 b { font-size: 16px; white-space: nowrap; }
 .billing .row.wrap > button { white-space: nowrap; font-size: 15px; }
 @media (min-width: 900px) { .billing .stats3 b { font-size: 20px; } }
+
+/* ---------- AI 자동 입력 ---------- */
+.assistant { border: 2px solid #c9d6fb; background: #f7f9ff; display: flex; flex-direction: column; gap: 8px; }
+.as-input { display: flex; gap: 8px; align-items: flex-end; }
+.as-icon { font-size: 24px; padding-bottom: 8px; }
+.as-input textarea { flex: 1; resize: none; min-height: 46px; max-height: 120px; field-sizing: content; line-height: 1.4; }
+.as-examples { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; }
+.as-examples .pill { font-size: 12px; white-space: nowrap; }
+.as-plan { display: flex; flex-direction: column; gap: 8px; }
+.as-reply { margin: 0; font-weight: 600; }
+.as-question { background: #fff4e5; border-radius: 10px; padding: 10px 12px; }
+.as-plan .plain li { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; }
+.as-result { display: flex; flex-direction: column; gap: 4px; font-size: 14px; }
+.status.absent { background: #fdecea; color: var(--danger); }
+@media (min-width: 900px) { .assistant { max-width: 900px; } }
+.absence-list { margin-top: 10px; background: #fdecea; color: var(--danger); border-radius: 10px; padding: 8px 12px; font-size: 14px; display: flex; flex-direction: column; gap: 2px; }

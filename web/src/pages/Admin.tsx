@@ -6,6 +6,7 @@ import {
 import { dayLabel, useI18n } from '../i18n'
 import KioskScreen from './Kiosk'
 import BillingTab, { StudentBillingSection, useBaseFee } from './AdminBilling'
+import AssistantBox from './Assistant'
 import { InstallBanner, InstallGuide } from '../install'
 
 type Tab = 'today' | 'students' | 'billing' | 'timeline' | 'more'
@@ -17,6 +18,7 @@ export default function AdminApp({ member }: { member: Member }): JSX.Element {
   const [kiosk, setKiosk] = useState(false)
   const [students, setStudents] = useState<Student[]>([])
   const [today, setToday] = useState<Attendance[]>([])
+  const [absent, setAbsent] = useState<Record<string, string>>({})
 
   const load = useCallback(async () => {
     const [s, a] = await Promise.all([
@@ -25,6 +27,9 @@ export default function AdminApp({ member }: { member: Member }): JSX.Element {
     ])
     setStudents((s.data as Student[]) ?? [])
     setToday((a.data as Attendance[]) ?? [])
+    const kst = new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 10)
+    const { data: ab } = await supabase.from('absences').select('student_id,reason').eq('date', kst)
+    setAbsent(Object.fromEntries(((ab as { student_id: string; reason: string }[]) ?? []).map((x) => [x.student_id, x.reason])))
   }, [])
 
   useEffect(() => {
@@ -33,6 +38,7 @@ export default function AdminApp({ member }: { member: Member }): JSX.Element {
       .channel('admin-live')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance' }, () => load())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'students' }, () => load())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'absences' }, () => load())
       .subscribe()
     return () => void supabase.removeChannel(ch)
   }, [load])
@@ -50,7 +56,8 @@ export default function AdminApp({ member }: { member: Member }): JSX.Element {
       </header>
 
       <InstallBanner />
-      {tab === 'today' && <TodayTab students={students} today={today} onKiosk={() => setKiosk(true)} />}
+      {tab !== 'more' && <AssistantBox />}
+      {tab === 'today' && <TodayTab students={students} today={today} absent={absent} onKiosk={() => setKiosk(true)} />}
       {tab === 'students' && <StudentsTab students={students} reload={load} />}
       {tab === 'billing' && <BillingTab students={students} member={member} />}
       {tab === 'timeline' && <TimelineTab />}
@@ -78,7 +85,7 @@ function statusOf(id: string, today: Attendance[]): { s: 'none' | 'in' | 'out'; 
   return { s, inAt: lastIn?.at, outAt: lastOut?.at }
 }
 
-function TodayTab({ students, today, onKiosk }: { students: Student[]; today: Attendance[]; onKiosk(): void }): JSX.Element {
+function TodayTab({ students, today, absent, onKiosk }: { students: Student[]; today: Attendance[]; absent: Record<string, string>; onKiosk(): void }): JSX.Element {
   const [q, setQ] = useState('')
   const [group, setGroup] = useState('전체')
   const [open, setOpen] = useState<string | null>(null)
@@ -90,6 +97,7 @@ function TodayTab({ students, today, onKiosk }: { students: Student[]; today: At
     .filter((s) => !q || s.name.includes(q) || s.code.includes(q))
   const counts = { in: 0, out: 0, none: 0 }
   for (const s of active) counts[statusOf(s.id, today).s]++
+  const absentCount = active.filter((s) => s.id in absent && statusOf(s.id, today).s === 'none').length
 
   const check = async (s: Student, kind: 'in' | 'out'): Promise<void> => {
     setBusy(true)
@@ -104,7 +112,7 @@ function TodayTab({ students, today, onKiosk }: { students: Student[]; today: At
       <div className="stats3">
         <div><b>{counts.in}</b><span>수련 중</span></div>
         <div><b>{counts.out}</b><span>하원</span></div>
-        <div><b>{counts.none}</b><span>미등원</span></div>
+        <div><b>{counts.none - absentCount}</b><span>미등원{absentCount ? ` (결석 ${absentCount})` : ''}</span></div>
       </div>
       <button className="primary big wide" onClick={onKiosk}>📟 출석 태블릿 화면 열기</button>
       <input className="search" placeholder="이름 또는 출석번호 검색" value={q} onChange={(e) => setQ(e.target.value)} />
@@ -121,9 +129,13 @@ function TodayTab({ students, today, onKiosk }: { students: Student[]; today: At
                 <span className="grow">
                   <b>{s.name}</b> <span className="muted small">{s.group_name} · {s.code}</span>
                 </span>
-                <span className={`status ${st.s}`}>
-                  {st.s === 'none' ? '미등원' : st.s === 'in' ? `등원 ${hhmm(st.inAt!)}` : `하원 ${hhmm(st.outAt!)}`}
-                </span>
+                {st.s === 'none' && s.id in absent ? (
+                  <span className="status absent" title={absent[s.id]}>결석{absent[s.id] ? ` · ${absent[s.id]}` : ''}</span>
+                ) : (
+                  <span className={`status ${st.s}`}>
+                    {st.s === 'none' ? '미등원' : st.s === 'in' ? `등원 ${hhmm(st.inAt!)}` : `하원 ${hhmm(st.outAt!)}`}
+                  </span>
+                )}
               </button>
               {open === s.id && (
                 <div className="row-actions">
