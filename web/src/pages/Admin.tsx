@@ -9,6 +9,7 @@ import BillingTab, { StudentBillingSection, useBaseFee } from './AdminBilling'
 import AssistantBox from './Assistant'
 import { StudentForm, studentLine, type StudentFull } from './StudentForm'
 import ShuttleTab from './Shuttle'
+import { DailyBook, MonthlyBook } from './AttendanceBook'
 import { InstallBanner, InstallGuide } from '../install'
 
 type Tab = 'today' | 'students' | 'billing' | 'shuttle' | 'timeline' | 'more'
@@ -18,6 +19,9 @@ const APP_URL = location.origin + location.pathname
 export default function AdminApp({ member }: { member: Member }): JSX.Element {
   const [tab, setTab] = useState<Tab>('today')
   const [kiosk, setKiosk] = useState(false)
+  const [att, setAtt] = useState<'today' | 'daily' | 'monthly'>('today')
+  const [dayKey, setDayKey] = useState(0) // 월별에서 날짜 눌렀을 때 일별 새로 열기
+  const [openDay, setOpenDay] = useState<string | null>(null)
   const [students, setStudents] = useState<Student[]>([])
   const [today, setToday] = useState<Attendance[]>([])
   const [absent, setAbsent] = useState<Record<string, string>>({})
@@ -52,14 +56,23 @@ export default function AdminApp({ member }: { member: Member }): JSX.Element {
       <header className="m-head">
         <div className="logo">강</div>
         <div className="grow">
-          <div className="m-title">{{ today: '오늘 출석', students: '학생 관리', billing: '수납 관리', shuttle: '강철셔틀 · 차량표', timeline: '타임라인', more: '더보기' }[tab]}</div>
+          <div className="m-title">{tab === 'today' && att !== 'today' ? (att === 'daily' ? '일별 출석부' : '월별 출석부') : { today: '오늘 출석', students: '학생 관리', billing: '수납 관리', shuttle: '강철셔틀 · 차량표', timeline: '타임라인', more: '더보기' }[tab]}</div>
           <div className="muted small">{member.display_name} · {member.role === 'admin' ? '관리자' : '선생님'}</div>
         </div>
       </header>
 
       <InstallBanner />
       {tab !== 'more' && <AssistantBox />}
-      {tab === 'today' && <TodayTab students={students} today={today} absent={absent} onKiosk={() => setKiosk(true)} />}
+      {tab === 'today' && (
+        <div className="att-subtabs">
+          {([['today', '오늘'], ['daily', '일별'], ['monthly', '월별']] as const).map(([id, label]) => (
+            <button key={id} className={att === id ? 'pill on' : 'pill'} onClick={() => { setAtt(id); setOpenDay(null) }}>{label}</button>
+          ))}
+        </div>
+      )}
+      {tab === 'today' && att === 'today' && <TodayTab students={students} today={today} absent={absent} onKiosk={() => setKiosk(true)} />}
+      {tab === 'today' && att === 'daily' && <DailyBook key={dayKey} students={students} initialDate={openDay ?? undefined} />}
+      {tab === 'today' && att === 'monthly' && <MonthlyBook students={students} onOpenDay={(d) => { setOpenDay(d); setDayKey(dayKey + 1); setAtt('daily') }} />}
       {tab === 'students' && <StudentsTab students={students} reload={load} />}
       {tab === 'billing' && <BillingTab students={students} member={member} />}
       {tab === 'shuttle' && <ShuttleTab students={students} member={member} />}
@@ -69,9 +82,18 @@ export default function AdminApp({ member }: { member: Member }): JSX.Element {
       <nav className="tabbar">
         <div className="side-brand"><div className="logo">강</div>강철노트</div>
         {([['today', '✅', '출석'], ['students', '🥋', '학생'], ['billing', '💳', '수납'], ['shuttle', '🚐', '차량'], ['timeline', '🕒', '기록'], ['more', '⋯', '더보기']] as const).map(([id, icon, label]) => (
-          <button key={id} className={tab === id ? 'on' : ''} onClick={() => setTab(id)}>
-            <span>{icon}</span>{label}
-          </button>
+          <div key={id} className="tab-group">
+            <button className={tab === id ? 'on' : ''} onClick={() => { setTab(id); if (id === 'today') setAtt('today') }}>
+              <span>{icon}</span>{label}
+            </button>
+            {id === 'today' && tab === 'today' && (
+              <div className="subnav">
+                {([['today', '오늘'], ['daily', '일별'], ['monthly', '월별']] as const).map(([k, l]) => (
+                  <button key={k} className={att === k ? 'on' : ''} onClick={() => { setAtt(k); setOpenDay(null) }}>{l}</button>
+                ))}
+              </div>
+            )}
+          </div>
         ))}
       </nav>
     </div>

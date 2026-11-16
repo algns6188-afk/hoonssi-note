@@ -10,6 +10,7 @@ export function ParentPayments({ kids }: { kids: Student[] }): JSX.Element | nul
   const [bank, setBank] = useState<OrgBank | null>(null)
   const [payers, setPayers] = useState<string[]>([])
   const [reporting, setReporting] = useState<Invoice | null>(null)
+  const [paying, setPaying] = useState<Invoice | null>(null)
   const [toast, setToast] = useState<string | null>(null)
   const [showHistory, setShowHistory] = useState(false)
 
@@ -32,6 +33,28 @@ export function ParentPayments({ kids }: { kids: Student[] }): JSX.Element | nul
       .subscribe()
     return () => void supabase.removeChannel(ch)
   }, [load])
+
+  // 카드·토스페이 결제창에서 돌아왔을 때 (…?pay=success&paymentKey=…&orderId=…&amount=…)
+  useEffect(() => {
+    const u = new URL(location.href)
+    const r = u.searchParams.get('pay')
+    if (!r) return
+    const clean = (): void => history.replaceState(null, '', u.pathname)
+    if (r === 'fail') { setToast(t.payFailed); clean(); return }
+    const paymentKey = u.searchParams.get('paymentKey'), orderId = u.searchParams.get('orderId'), amount = Number(u.searchParams.get('amount'))
+    clean()
+    if (!paymentKey || !orderId) return
+    setToast(t.payChecking)
+    supabase.functions.invoke('pay', { body: { paymentKey, orderId, amount } }).then(async ({ error }) => {
+      if (error) {
+        const ctx = (error as { context?: Response }).context
+        const j = ctx ? await ctx.json().catch(() => null) : null
+        setToast(`${t.payFailed} (${j?.error ?? errText(error)})`)
+      } else setToast(t.payDone)
+      window.setTimeout(() => setToast(null), 4000)
+      load()
+    })
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!invoices) return null
   const kidName = (id: string): string => kids.find((k) => k.id === id)?.name ?? ''
@@ -87,10 +110,16 @@ export function ParentPayments({ kids }: { kids: Student[] }): JSX.Element | nul
                   <div className="bill-status">⏳ {t.payReported} · {t.payReportedBody}</div>
                 ) : (
                   <div className="bill-actions">
-                    {accOf(i) && isMobile() && (
-                      <a className="btn toss" href={tossLink(accOf(i)!, i.amount)}>{t.payToss}</a>
+                    {bank?.toss_client_key ? (
+                      <button className="primary" onClick={() => setPaying(i)}>💳 {t.payNow}</button>
+                    ) : (
+                      <>
+                        {accOf(i) && isMobile() && (
+                          <a className="btn toss" href={tossLink(accOf(i)!, i.amount)}>{t.payToss}</a>
+                        )}
+                        <button className="primary" onClick={() => setReporting(i)}>{t.payReport}</button>
+                      </>
                     )}
-                    <button className="primary" onClick={() => setReporting(i)}>{t.payReport}</button>
                   </div>
                 )}
               </li>
@@ -135,6 +164,10 @@ export function ParentPayments({ kids }: { kids: Student[] }): JSX.Element | nul
       )}
 
       {toast && <div className="toast">{toast}</div>}
+      {paying && bank && (
+        <PaySheet invoice={paying} bank={bank} acc={accOf(paying)} kidName={kidName(paying.student_id)}
+          onClose={() => setPaying(null)} onReport={() => { setReporting(paying); setPaying(null) }} onCopied={() => flash(t.payCopied)} />
+      )}
       {reporting && (
         <ReportSheet
           invoice={reporting}
@@ -195,6 +228,105 @@ function ReportSheet({ invoice, payers, onClose, onDone }: {
           )}
           {err && <div className="error">{err}</div>}
           <button className="primary big" disabled={busy || !payer.trim()} onClick={send}>{busy ? t.loading : t.payReportSend}</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/* ---------------- 결제 수단 고르기: 카드 · 토스페이 · 무통장 ---------------- */
+
+type PayKind = 'card' | 'tosspay' | 'bank'
+declare global { interface Window { TossPayments?: unknown } }
+
+function loadTossSdk(): Promise<void> {
+  if (window.TossPayments) return Promise.resolve()
+  return new Promise((ok, fail) => {
+    const sc = document.createElement('script')
+    sc.src = 'https://js.tosspayments.com/v2/standard'
+    sc.onload = () => ok()
+    sc.onerror = () => fail(new Error('sdk_load_failed'))
+    document.head.appendChild(sc)
+  })
+}
+
+function PaySheet({ invoice, bank, acc, kidName, onClose, onReport, onCopied }: {
+  invoice: Invoice; bank: OrgBank; acc: BankAccount | null; kidName: string
+  onClose(): void; onReport(): void; onCopied(): void
+}): JSX.Element {
+  const { t, lang } = useI18n()
+  const [kind, setKind] = useState<PayKind>('card')
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+  const name = `${kidName} ${itemLabel(invoice.item_name, invoice.period, lang)}`.trim().slice(0, 90)
+
+  const go = async (): Promise<void> => {
+    setBusy(true)
+    setErr(null)
+    try {
+      await loadTossSdk()
+      const TP = window.TossPayments as unknown as ((k: string) => { payment(o: { customerKey: string }): { requestPayment(o: Record<string, unknown>): Promise<void> } }) & { ANONYMOUS: string }
+      const back = location.origin + location.pathname
+      const payment = TP(bank.toss_client_key!).payment({ customerKey: TP.ANONYMOUS })
+      await payment.requestPayment({
+        method: 'CARD',
+        amount: { currency: 'KRW', value: invoice.amount },
+        orderId: `inv-${invoice.id}-${Date.now().toString(36)}`,
+        orderName: name,
+        customerName: kidName || undefined,
+        successUrl: back + '?pay=success',
+        failUrl: back + '?pay=fail',
+        card: kind === 'tosspay'
+          ? { flowMode: 'DIRECT', easyPay: 'TOSSPAY', useEscrow: false }
+          : { flowMode: 'DEFAULT', useEscrow: false, useCardPoint: false, useAppCardOnly: false }
+      })
+    } catch (e) {
+      const m = errText(e)
+      if (!/USER_CANCEL|취소/.test(m)) setErr(`${t.payFailed} (${m})`)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const opts: [PayKind, string, string][] = [['card', '💳', t.payCard], ['tosspay', '🔵', t.payTossPay], ['bank', '🏦', t.payBank]]
+  return (
+    <div className="sheet-bg" onClick={onClose}>
+      <div className="sheet" onClick={(e) => e.stopPropagation()}>
+        <div className="sheet-head">
+          <h2>{t.payMethod}</h2>
+          <button className="ghost" onClick={onClose}>✕</button>
+        </div>
+        <div className="form">
+          <div className="report-sum">
+            <span>{name}</span>
+            <b>{won(invoice.amount, lang)}</b>
+          </div>
+          <div className="pay-opts">
+            {opts.map(([k, icon, label]) => (
+              <button key={k} className={kind === k ? 'pay-opt on' : 'pay-opt'} onClick={() => setKind(k)}>
+                <span className="radio" /> <span className="pay-ico">{icon}</span> {label}
+              </button>
+            ))}
+          </div>
+          {kind === 'bank' ? (
+            acc ? (
+              <>
+                <p className="muted small">{t.payBankHint}</p>
+                <div className="account-box">
+                  <div>
+                    <b>{acc.bank_name} {acc.bank_account}</b>
+                    <div className="small">{acc.account_holder}</div>
+                  </div>
+                  <button onClick={() => copyText(acc.bank_account.replace(/[^0-9]/g, '')).then(onCopied)}>{t.payCopy}</button>
+                </div>
+                {isMobile() && <a className="btn toss" href={tossLink(acc, invoice.amount)}>{t.payToss}</a>}
+                <button className="primary big" onClick={onReport}>{t.payReport}</button>
+              </>
+            ) : <p className="notify-warn">{t.payNoAccount}</p>
+          ) : (
+            <button className="primary big" disabled={busy} onClick={go}>{busy ? t.loading : `${won(invoice.amount, lang)} ${t.payGo} →`}</button>
+          )}
+          {err && <div className="error">{err}</div>}
         </div>
       </div>
     </div>

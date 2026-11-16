@@ -373,3 +373,54 @@ a.btn.call { background: var(--in-soft); padding: 8px 10px; }
 }
 .account .account-box + .account-box { margin-top: 8px; }
 .bill-acc { color: var(--in); margin-top: 2px; }
+
+/* ---------- 출석부 (일별·월별) ---------- */
+.tab-group { display: contents; }
+.subnav { display: none; }
+.att-subtabs { display: flex; gap: 6px; margin: 4px 0 8px; }
+@media (min-width: 900px) {
+  .tab-group { display: block; }
+  .subnav { display: flex; flex-direction: column; gap: 2px; margin: 2px 0 6px 34px; }
+  .tabbar .subnav button { font-size: 13px; padding: 6px 12px; color: #9aa6c4; border-radius: 8px; }
+  .tabbar .subnav button::before { content: '·'; margin-right: 6px; }
+  .tabbar .subnav button.on { color: #fff; background: rgba(255,255,255,.08); font-weight: 700; }
+  .att-subtabs { display: none; }
+}
+.date-pick { width: auto; padding: 4px 6px; font-size: 13px; }
+.att-summary { display: flex; flex-wrap: wrap; gap: 14px; font-size: 14px; margin: 4px 0; }
+.att-summary b { font-size: 16px; }
+.att-sel { font-weight: 700; color: #fff; border: 0; }
+.att-sel.att-in { background: #4f8a2a; }
+.att-sel.att-out { background: #5b8fc9; }
+.att-sel.att-absent { background: #e2553b; }
+.att-sel.att-none { background: #eef0f3; color: #555; }
+.att-sel option { background: #fff; color: #222; }
+.att-day .att-note { text-align: left; min-width: 120px; white-space: normal; }
+.att-month th, .att-month td { padding: 3px 2px; }
+.att-month .day-h { cursor: pointer; min-width: 34px; font-size: 12px; }
+.att-month .day-h div { font-size: 11px; font-weight: 400; }
+.att-month .day-h.sun { color: #e2553b; } .att-month .day-h.sat { color: #2f6fd6; }
+.att-month .day-h.today { background: #dfe9ff; }
+.att-month .day-h:hover { background: #e8eefc; }
+.att-month .sticky-col { position: sticky; left: 0; background: #fff; z-index: 1; min-width: 64px; }
+.att-month thead .sticky-col { z-index: 3; background: #f4f6f9; }
+.att-month thead .bt-total .sticky-col { background: #eef4ff; }
+.mchip { display: inline-block; font-size: 11px; border-radius: 4px; padding: 2px 3px; color: #fff; line-height: 1.2; }
+.mchip.in { background: #4f8a2a; }
+.mchip.absent { background: #e2553b; }
+.mchip.off { background: #c4c4c4; min-width: 22px; }
+@media print {
+  .att-subtabs, .attbook .bt-filters, .attbook .bt-actions, .date-pick { display: none !important; }
+  .mchip { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .att-sel { -webkit-print-color-adjust: exact; print-color-adjust: exact; appearance: none; }
+}
+
+/* ---------- 학부모 결제 수단 ---------- */
+.pay-opts { display: flex; flex-direction: column; gap: 10px; }
+.pay-opt { display: flex; align-items: center; gap: 10px; text-align: left; padding: 16px; border: 1px solid var(--line); border-radius: 12px; background: #fff; font-size: 16px; color: #556; }
+.pay-opt .radio { width: 22px; height: 22px; border-radius: 50%; border: 2px solid #b8bfcc; flex: none; position: relative; }
+.pay-opt.on { border-color: var(--brand); background: #f2f6ff; color: var(--brand); font-weight: 700; }
+.pay-opt.on .radio { border-color: var(--brand); }
+.pay-opt.on .radio::after { content: ''; position: absolute; inset: 4px; border-radius: 50%; background: var(--brand); }
+.pay-ico { font-size: 18px; }
+@media (min-width: 900px) { .tab-group > button { width: 100%; } }

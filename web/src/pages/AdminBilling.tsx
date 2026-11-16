@@ -362,6 +362,7 @@ const BANKS = ['신한은행', '국민은행', '우리은행', '하나은행', '
 
 function SettingsSheet({ items, member, onClose, reload }: { items: FeeItem[]; member: Member; onClose(): void; reload(): Promise<void> }): JSX.Element {
   const [bank, setBank] = useState({ bank_name: '', bank_account: '', account_holder: '', bank2_name: '', bank2_account: '', account2_holder: '' })
+  const [toss, setToss] = useState<string | null>(null) // null = v10 전
   const [two, setTwo] = useState(true) // v9 실행돼서 2번 계좌 칸이 있는지
   const [rows, setRows] = useState(items.map((i) => ({ ...i, amountText: String(i.default_amount || '') })))
   const [newName, setNewName] = useState('')
@@ -373,6 +374,8 @@ function SettingsSheet({ items, member, onClose, reload }: { items: FeeItem[]; m
       const b = (data as Partial<typeof bank>[] | null)?.[0]
       if (!b) return
       if (b.bank2_account === undefined) setTwo(false)
+      const tk = (b as { toss_client_key?: string }).toss_client_key
+      setToss(tk === undefined ? null : tk)
       setBank({ bank_name: b.bank_name ?? '', bank_account: b.bank_account ?? '', account_holder: b.account_holder ?? '',
         bank2_name: b.bank2_name ?? '', bank2_account: b.bank2_account ?? '', account2_holder: b.account2_holder ?? '' })
     })
@@ -428,6 +431,22 @@ function SettingsSheet({ items, member, onClose, reload }: { items: FeeItem[]; m
           </>
         ) : <p className="notice">두 번째 계좌는 Supabase에서 <b>schema-v9-billing-table.sql</b> 을 실행한 뒤 입력할 수 있어요.</p>}
         {admin && <button className="primary" onClick={saveBank}>계좌 저장</button>}
+
+        <h3>💳 카드·토스페이 결제 <span className="muted small">토스페이먼츠</span></h3>
+        {toss === null ? <p className="notice">카드 결제는 Supabase에서 <b>schema-v10-attendance-pay.sql</b> 을 실행한 뒤 설정할 수 있어요.</p> : (
+          <>
+            <label>클라이언트 키
+              <input value={toss} disabled={!admin} onChange={(e) => setToss(e.target.value.trim())} placeholder="test_ck_… 또는 live_ck_…" />
+              <span className="hint">토스페이먼츠 개발자센터 → API 키의 <b>클라이언트 키</b>만 여기 넣어요. 시크릿 키(…_sk_…)는 절대 여기·채팅에 넣지 말고 Supabase 비밀값 TOSS_SECRET_KEY 에만 넣으세요.</span>
+            </label>
+            {toss.includes('_sk_') && <div className="error">이건 시크릿 키예요! 지우고 클라이언트 키(_ck_)를 넣어 주세요.</div>}
+            {admin && <button className="primary" disabled={toss.includes('_sk_')} onClick={async () => {
+              const { error } = await supabase.from('orgs').update({ toss_client_key: toss }).eq('id', member.org_id)
+              setMsg(error ? '저장 실패: ' + errText(error) : toss ? '✅ 카드·토스페이 결제를 켰어요. 학부모 화면에 [결제하기]가 보여요.' : '카드 결제를 껐어요.')
+            }}>카드 결제 저장</button>}
+            <p className="muted small">비워 두면 학부모 화면은 지금처럼 계좌이체 + "입금했어요"만 보여요.</p>
+          </>
+        )}
 
         <h3>청구 항목 · 기본 금액</h3>
         <p className="muted small"><b>수련비</b> 기본 금액이 매달 청구 금액이에요. 형제 할인처럼 학생마다 다르면 학생 화면에서 따로 정하세요.</p>

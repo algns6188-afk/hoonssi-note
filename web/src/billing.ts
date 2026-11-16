@@ -33,6 +33,7 @@ export interface OrgBank {
   bank2_name?: string
   bank2_account?: string
   account2_holder?: string
+  toss_client_key?: string
 }
 export interface BankAccount { bank_name: string; bank_account: string; account_holder: string }
 
