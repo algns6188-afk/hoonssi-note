@@ -371,3 +371,5 @@ a.btn.call { background: var(--in-soft); padding: 8px 10px; }
   .bt-table th:first-child, .bt-table td:first-child, .bt-table th:last-child, .bt-table td:last-child { display: none; }
   .bt-table input, .bt-table select, .bt-table button { border: 0; background: none; appearance: none; padding: 0; }
 }
+.account .account-box + .account-box { margin-top: 8px; }
+.bill-acc { color: var(--in); margin-top: 2px; }

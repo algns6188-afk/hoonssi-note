@@ -30,6 +30,22 @@ export interface OrgBank {
   bank_name: string
   bank_account: string
   account_holder: string
+  bank2_name?: string
+  bank2_account?: string
+  account2_holder?: string
+}
+export interface BankAccount { bank_name: string; bank_account: string; account_holder: string }
+
+/** 수강료(수련비)인지: 수강료 계좌로 받는 청구 */
+export const isTuition = (item: string): boolean => item === '수련비'
+
+/** 이 청구를 받을 계좌: 수련비 → 1번(수강료 계좌), 나머지 → 2번(없으면 1번) */
+export function accountFor(bank: OrgBank | null, item: string): BankAccount | null {
+  if (!bank) return null
+  const one = { bank_name: bank.bank_name, bank_account: bank.bank_account, account_holder: bank.account_holder }
+  const two = { bank_name: bank.bank2_name ?? '', bank_account: bank.bank2_account ?? '', account_holder: bank.account2_holder ?? '' }
+  const pick = !isTuition(item) && two.bank_account ? two : one
+  return pick.bank_account ? pick : null
 }
 
 const ITEM: Record<string, Record<Exclude<Lang, 'ko'>, string>> = {
@@ -68,7 +84,7 @@ export const shiftPeriod = (p: string, d: number): string => {
 export const periodLabel = (p: string): string => `${p.slice(0, 4)}년 ${Number(p.slice(5, 7))}월`
 
 /** 토스 송금 화면을 도장 계좌·금액이 채워진 상태로 열기 (토스 앱이 있을 때) */
-export function tossLink(bank: OrgBank, amount: number): string {
+export function tossLink(bank: BankAccount, amount: number): string {
   const acct = bank.bank_account.replace(/[^0-9]/g, '')
   return `supertoss://send?amount=${amount}&bank=${encodeURIComponent(bank.bank_name)}&accountNo=${acct}&origin=qr`
 }

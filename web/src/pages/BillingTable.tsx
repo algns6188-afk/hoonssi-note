@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase, errText, type Member } from '../supabase'
-import { itemLabel, periodLabel, won, type FeeItem, type Invoice } from '../billing'
+import { isTuition, itemLabel, periodLabel, won, type FeeItem, type Invoice } from '../billing'
 import type { StudentFull } from './StudentForm'
 
 /** v9 컬럼까지 포함한 청구서 */
@@ -59,6 +59,12 @@ export default function BillingTable({ invoices, period, students, items, member
   const inPeriod = (i: Inv): boolean => (i.period ? i.period === period : kstDate(i.created_at).slice(0, 7) === period)
   const methodKind = (name: string): PayMethod['kind'] => methods.find((m) => m.name === name)?.kind ?? 'other'
 
+  /** 완납 처리 때 기본 결제방법: 수련비 → 수강료계좌, 그 외 → 기타계좌 */
+  const defaultVia = (i: Inv): string => {
+    const act = methods.filter((m) => m.active)
+    const pref = isTuition(i.item_name) ? '수강료계좌_' : '기타계좌_'
+    return act.find((m) => m.name.startsWith(pref))?.name ?? act.find((m) => m.kind === 'transfer')?.name ?? act[0]?.name ?? '계좌이체'
+  }
   const draftOf = (i: Inv): Draft => drafts[i.id] ?? {
     status: i.status,
     paid: i.status === 'paid' ? String(i.paid_amount ?? i.amount) : '',
@@ -73,7 +79,7 @@ export default function BillingTable({ invoices, period, students, items, member
     if (patch.status === 'paid') {
       if (!d.paid) d.paid = String(i.amount)
       if (!d.date) d.date = today()
-      if (!d.via) d.via = methods.find((m) => m.active)?.name ?? '계좌이체'
+      if (!d.via) d.via = defaultVia(i)
     }
     if (patch.status === 'unpaid') { d.paid = ''; d.date = '' }
     setDrafts({ ...drafts, [i.id]: d })
@@ -148,7 +154,7 @@ export default function BillingTable({ invoices, period, students, items, member
       const d = { ...draftOf(i), status: 'paid' as const }
       if (!d.paid) d.paid = String(i.amount)
       if (!d.date) d.date = today()
-      if (!d.via) d.via = methods.find((m) => m.active)?.name ?? '계좌이체'
+      if (!d.via) d.via = defaultVia(i)
       n[i.id] = d
     }
     setDrafts(n); setMsg('완납으로 바꿨어요. [선택저장]을 눌러야 반영돼요.')

@@ -1,4 +1,4 @@
--- 강철노트 v9: 수납 표 보기 (결제방법 목록 · 현금영수증 · 납부 알림 다시 보내기)
+-- 강철노트 v9: 수납 표 보기 (결제방법 목록 · 현금영수증 · 납부 알림 다시 보내기 · 도장 계좌 2개)
 -- schema-v8-phone-login.sql 다음에 실행. 여러 번 실행해도 안전합니다.
 
 alter table public.invoices add column if not exists paid_via text not null default '';      -- 결제방법 이름 (국민은행_건요, 카드 …)
@@ -52,3 +52,19 @@ begin
   return n;
 end $$;
 grant execute on function public.remind_invoices(uuid[]) to authenticated;
+
+-- 도장 계좌 2개: 1번 = 수강료(수련비) 전용, 2번 = 심사비·행사비·대회비 등 나머지
+-- 2번이 비어 있으면 모든 청구에 1번 계좌를 안내합니다.
+alter table public.orgs add column if not exists bank2_name text not null default '';
+alter table public.orgs add column if not exists bank2_account text not null default '';
+alter table public.orgs add column if not exists account2_holder text not null default '';
+
+drop function if exists public.org_bank();
+create function public.org_bank()
+returns table (name text, bank_name text, bank_account text, account_holder text,
+               bank2_name text, bank2_account text, account2_holder text)
+language sql stable security definer set search_path = public as $$
+  select name, bank_name, bank_account, account_holder, bank2_name, bank2_account, account2_holder
+    from public.orgs where id = public.my_org()
+$$;
+grant execute on function public.org_bank() to authenticated;

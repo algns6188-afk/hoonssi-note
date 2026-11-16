@@ -361,7 +361,8 @@ function InvoiceSheet({ invoice: i, name, member, onClose }: { invoice: Invoice;
 const BANKS = ['신한은행', '국민은행', '우리은행', '하나은행', 'NH농협은행', 'IBK기업은행', '카카오뱅크', '토스뱅크', '케이뱅크', 'SC제일은행', '새마을금고', '우체국', '부산은행', '대구은행']
 
 function SettingsSheet({ items, member, onClose, reload }: { items: FeeItem[]; member: Member; onClose(): void; reload(): Promise<void> }): JSX.Element {
-  const [bank, setBank] = useState({ bank_name: '', bank_account: '', account_holder: '' })
+  const [bank, setBank] = useState({ bank_name: '', bank_account: '', account_holder: '', bank2_name: '', bank2_account: '', account2_holder: '' })
+  const [two, setTwo] = useState(true) // v9 실행돼서 2번 계좌 칸이 있는지
   const [rows, setRows] = useState(items.map((i) => ({ ...i, amountText: String(i.default_amount || '') })))
   const [newName, setNewName] = useState('')
   const [msg, setMsg] = useState<string | null>(null)
@@ -369,16 +370,30 @@ function SettingsSheet({ items, member, onClose, reload }: { items: FeeItem[]; m
 
   useEffect(() => {
     supabase.rpc('org_bank').then(({ data }) => {
-      const b = (data as { bank_name: string; bank_account: string; account_holder: string }[] | null)?.[0]
-      if (b) setBank({ bank_name: b.bank_name, bank_account: b.bank_account, account_holder: b.account_holder })
+      const b = (data as Partial<typeof bank>[] | null)?.[0]
+      if (!b) return
+      if (b.bank2_account === undefined) setTwo(false)
+      setBank({ bank_name: b.bank_name ?? '', bank_account: b.bank_account ?? '', account_holder: b.account_holder ?? '',
+        bank2_name: b.bank2_name ?? '', bank2_account: b.bank2_account ?? '', account2_holder: b.account2_holder ?? '' })
     })
   }, [])
   useEffect(() => setRows(items.map((i) => ({ ...i, amountText: String(i.default_amount || '') }))), [items])
 
   const saveBank = async (): Promise<void> => {
-    const { error } = await supabase.from('orgs').update(bank).eq('id', member.org_id)
+    const patch = two ? bank : { bank_name: bank.bank_name, bank_account: bank.bank_account, account_holder: bank.account_holder }
+    const { error } = await supabase.from('orgs').update(patch).eq('id', member.org_id)
     if (error) return setMsg('저장 실패: ' + errText(error))
-    await supabase.from('timeline').insert({ org_id: member.org_id, kind: 'payment', summary: `도장 계좌 변경: ${bank.bank_name} ${bank.bank_account} (${bank.account_holder})` })
+    const summary = `도장 계좌 변경: 수강료 ${bank.bank_name} ${bank.bank_account} (${bank.account_holder})` +
+      (two && bank.bank2_account ? ` · 기타 ${bank.bank2_name} ${bank.bank2_account} (${bank.account2_holder})` : '')
+    await supabase.from('timeline').insert({ org_id: member.org_id, kind: 'payment', summary })
+    // 수납 표의 결제방법 목록에도 계좌별 항목 추가 (v9 이후, 이미 있으면 그대로)
+    if (two) {
+      const add = [
+        bank.bank_account && { org_id: member.org_id, name: `수강료계좌_${bank.bank_name}`, kind: 'transfer', sort: 0 },
+        bank.bank2_account && { org_id: member.org_id, name: `기타계좌_${bank.bank2_name}`, kind: 'transfer', sort: 0 }
+      ].filter(Boolean)
+      if (add.length) await supabase.from('pay_methods').upsert(add as object[], { onConflict: 'org_id,name', ignoreDuplicates: true })
+    }
     setMsg('✅ 도장 계좌를 저장했어요. 학부모 화면에 바로 반영돼요.')
   }
   const saveItem = async (r: (typeof rows)[number]): Promise<void> => {
@@ -396,13 +411,22 @@ function SettingsSheet({ items, member, onClose, reload }: { items: FeeItem[]; m
   return (
     <Sheet title="⚙️ 수납 설정" onClose={onClose}>
       <div className="form">
-        <h3>도장 계좌 {!admin && <span className="muted small">(관리자만 바꿀 수 있어요)</span>}</h3>
+        <h3>① 수강료 계좌 <span className="muted small">수련비만 받는 계좌</span> {!admin && <span className="muted small">(관리자만 바꿀 수 있어요)</span>}</h3>
         <label>은행
           <input list="banks" value={bank.bank_name} disabled={!admin} onChange={(e) => setBank({ ...bank, bank_name: e.target.value })} placeholder="예: 신한은행" />
           <datalist id="banks">{BANKS.map((b) => <option key={b} value={b} />)}</datalist>
         </label>
         <label>계좌번호<input inputMode="numeric" value={bank.bank_account} disabled={!admin} onChange={(e) => setBank({ ...bank, bank_account: e.target.value })} placeholder="110-123-456789" /></label>
         <label>예금주<input value={bank.account_holder} disabled={!admin} onChange={(e) => setBank({ ...bank, account_holder: e.target.value })} placeholder="예: 강철태권도장" /></label>
+        <h3>② 기타 계좌 <span className="muted small">심사비·행사비·대회비·도복비 등</span></h3>
+        {two ? (
+          <>
+            <label>은행<input list="banks" value={bank.bank2_name} disabled={!admin} onChange={(e) => setBank({ ...bank, bank2_name: e.target.value })} placeholder="예: 국민은행" /></label>
+            <label>계좌번호<input inputMode="numeric" value={bank.bank2_account} disabled={!admin} onChange={(e) => setBank({ ...bank, bank2_account: e.target.value })} placeholder="비워 두면 ① 계좌로 안내" /></label>
+            <label>예금주<input value={bank.account2_holder} disabled={!admin} onChange={(e) => setBank({ ...bank, account2_holder: e.target.value })} placeholder="예: 강철태권도장" /></label>
+            <p className="muted small">학부모 화면에서 수련비는 ① 계좌, 그 외 청구는 ② 계좌로 자동 안내돼요. 토스 버튼도 각 계좌로 열려요.</p>
+          </>
+        ) : <p className="notice">두 번째 계좌는 Supabase에서 <b>schema-v9-billing-table.sql</b> 을 실행한 뒤 입력할 수 있어요.</p>}
         {admin && <button className="primary" onClick={saveBank}>계좌 저장</button>}
 
         <h3>청구 항목 · 기본 금액</h3>

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { supabase, errText, type Student } from '../supabase'
 import { useI18n } from '../i18n'
-import { copyText, isMobile, itemLabel, tossLink, won, type Invoice, type OrgBank } from '../billing'
+import { accountFor, copyText, isMobile, isTuition, itemLabel, tossLink, won, type BankAccount, type Invoice, type OrgBank } from '../billing'
 
 /** 학부모 화면: 납부할 내역 · 도장 계좌 · 토스/계좌 복사 · "입금했어요" */
 export function ParentPayments({ kids }: { kids: Student[] }): JSX.Element | null {
@@ -38,7 +38,18 @@ export function ParentPayments({ kids }: { kids: Student[] }): JSX.Element | nul
   const open = invoices.filter((i) => i.status === 'unpaid' || i.status === 'reported')
   const unpaidTotal = open.filter((i) => i.status === 'unpaid').reduce((s, i) => s + i.amount, 0)
   const paid = invoices.filter((i) => i.status === 'paid')
-  const hasBank = !!bank?.bank_account
+  const unpaid = open.filter((i) => i.status === 'unpaid')
+  const accOf = (i: Invoice): BankAccount | null => accountFor(bank, i.item_name)
+  // 미납 청구에 필요한 계좌들 (수련비용 / 그 외용). 같은 계좌면 하나로
+  const accounts: { label: string; acc: BankAccount }[] = []
+  for (const [tuition, label] of [[true, t.payAccountTuition], [false, t.payAccountOther]] as const) {
+    const inv = unpaid.find((i) => isTuition(i.item_name) === tuition)
+    const acc = inv && accOf(inv)
+    if (acc && !accounts.some((a) => a.acc.bank_account === acc.bank_account)) accounts.push({ label, acc })
+  }
+  const split = !!bank?.bank2_account && bank.bank2_account !== bank.bank_account
+  if (accounts.length === 1 && !split) accounts[0].label = t.payAccount
+  const missing = unpaid.some((i) => !accOf(i))
 
   const flash = (m: string): void => {
     setToast(m)
@@ -66,6 +77,9 @@ export function ParentPayments({ kids }: { kids: Student[] }): JSX.Element | nul
                       {kidName(i.student_id)}
                       {i.due_date && ` · ${t.payDue} ${i.due_date.slice(5).replace('-', '/')}`}
                     </div>
+                    {split && i.status === 'unpaid' && accOf(i) && (
+                      <div className="small bill-acc">🏦 {t.payAccountFor}: {accOf(i)!.bank_name} {accOf(i)!.bank_account}</div>
+                    )}
                   </div>
                   <b className="bill-amount">{won(i.amount, lang)}</b>
                 </div>
@@ -73,8 +87,8 @@ export function ParentPayments({ kids }: { kids: Student[] }): JSX.Element | nul
                   <div className="bill-status">⏳ {t.payReported} · {t.payReportedBody}</div>
                 ) : (
                   <div className="bill-actions">
-                    {hasBank && isMobile() && (
-                      <a className="btn toss" href={tossLink(bank!, i.amount)}>{t.payToss}</a>
+                    {accOf(i) && isMobile() && (
+                      <a className="btn toss" href={tossLink(accOf(i)!, i.amount)}>{t.payToss}</a>
                     )}
                     <button className="primary" onClick={() => setReporting(i)}>{t.payReport}</button>
                   </div>
@@ -83,21 +97,22 @@ export function ParentPayments({ kids }: { kids: Student[] }): JSX.Element | nul
             ))}
           </ul>
 
-          {hasBank ? (
+          {accounts.length > 0 && (
             <div className="account">
               <div className="muted small">{t.payHowTo}</div>
-              <div className="account-box">
-                <div>
-                  <div className="small muted">{t.payAccount}</div>
-                  <b>{bank!.bank_name} {bank!.bank_account}</b>
-                  <div className="small">{bank!.account_holder}</div>
+              {accounts.map(({ label, acc }) => (
+                <div className="account-box" key={acc.bank_account}>
+                  <div>
+                    <div className="small muted">{label}</div>
+                    <b>{acc.bank_name} {acc.bank_account}</b>
+                    <div className="small">{acc.account_holder}</div>
+                  </div>
+                  <button onClick={() => copyText(acc.bank_account.replace(/[^0-9]/g, '')).then(() => flash(t.payCopied))}>{t.payCopy}</button>
                 </div>
-                <button onClick={() => copyText(bank!.bank_account.replace(/[^0-9]/g, '')).then(() => flash(t.payCopied))}>{t.payCopy}</button>
-              </div>
+              ))}
             </div>
-          ) : (
-            <p className="notify-warn">{t.payNoAccount}</p>
           )}
+          {missing && <p className="notify-warn">{t.payNoAccount}</p>}
         </>
       )}
 
