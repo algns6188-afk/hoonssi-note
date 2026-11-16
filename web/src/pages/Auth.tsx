@@ -20,7 +20,7 @@ function useErr(): (e: unknown) => string {
   const { t } = useI18n()
   return (e) => {
     const m = errText(e)
-    for (const k of ['invalid_code', 'expired_code', 'used_code', 'other_org'] as const) if (m.includes(k)) return t[k]
+    for (const k of ['invalid_code', 'expired_code', 'used_code', 'other_org', 'no_match', 'locked', 'bad_phone'] as const) if (m.includes(k)) return t[k]
     if (/invalid login/i.test(m)) return t.wrongLogin
     if (/already registered|already exists/i.test(m)) return t.idTaken
     return `${t.error} (${m})`
@@ -29,7 +29,21 @@ function useErr(): (e: unknown) => string {
 
 export default function AuthScreen(): JSX.Element {
   const { t } = useI18n()
-  const [mode, setMode] = useState<'login' | 'signup'>('login')
+  const [mode, setMode] = useState<'parent' | 'login' | 'signup'>(() => {
+    try {
+      return (localStorage.getItem('loginMode') as 'parent' | 'login' | null) ?? 'parent'
+    } catch {
+      return 'parent'
+    }
+  })
+  const pick = (m: 'parent' | 'login' | 'signup'): void => {
+    setMode(m)
+    try {
+      if (m !== 'signup') localStorage.setItem('loginMode', m)
+    } catch {
+      // 무시
+    }
+  }
   return (
     <div className="auth">
       <div className="auth-top">
@@ -41,12 +55,61 @@ export default function AuthScreen(): JSX.Element {
         <h1>{t.appName}</h1>
       </div>
       <div className="seg">
-        <button className={mode === 'login' ? 'on' : ''} onClick={() => setMode('login')}>{t.login}</button>
-        <button className={mode === 'signup' ? 'on' : ''} onClick={() => setMode('signup')}>{t.signup}</button>
+        <button className={mode === 'parent' ? 'on' : ''} onClick={() => pick('parent')}>{t.tabParent}</button>
+        <button className={mode === 'login' ? 'on' : ''} onClick={() => pick('login')}>{t.tabId}</button>
       </div>
-      {mode === 'login' ? <LoginForm /> : <SignupForm />}
+      {mode === 'parent' ? <PhoneLoginForm /> : mode === 'login' ? <LoginForm /> : <SignupForm />}
+      {mode !== 'signup' ? (
+        <button className="link-btn small" onClick={() => pick('signup')}>🔑 {t.signup}</button>
+      ) : (
+        <button className="link-btn small" onClick={() => pick('parent')}>← {t.back}</button>
+      )}
       <InstallLink />
     </div>
+  )
+}
+
+/** 학부모: 보호자 전화번호 + 자녀 출석번호 → 바로 로그인 (다음부터 자동 로그인) */
+function PhoneLoginForm(): JSX.Element {
+  const { t } = useI18n()
+  const toErr = useErr()
+  const [phone, setPhone] = useState('')
+  const [code, setCode] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+  const fmt = (v: string): string => {
+    const d = v.replace(/\D/g, '').slice(0, 11)
+    return d.length < 4 ? d : d.length < 8 ? `${d.slice(0, 3)}-${d.slice(3)}` : `${d.slice(0, 3)}-${d.slice(3, d.length - 4)}-${d.slice(-4)}`
+  }
+  const submit = async (): Promise<void> => {
+    setBusy(true)
+    setErr(null)
+    try {
+      const { data, error } = await supabase.rpc('phone_login_prepare', { p_phone: phone, p_code: code })
+      if (error) throw error
+      const r = data as { email?: string; password?: string; error?: string }
+      if (r.error || !r.email) throw new Error(r.error ?? 'no_match')
+      const { error: e2 } = await supabase.auth.signInWithPassword({ email: r.email, password: r.password! })
+      if (e2) throw e2
+    } catch (e) {
+      setErr(toErr(e))
+      setBusy(false)
+    }
+  }
+  return (
+    <form className="card form" onSubmit={(e) => (e.preventDefault(), submit())}>
+      <label>{t.guardianPhone}
+        <input inputMode="tel" autoComplete="tel" placeholder="010-0000-0000" value={phone} onChange={(e) => setPhone(fmt(e.target.value))} />
+        <span className="hint">{t.guardianPhoneHint}</span>
+      </label>
+      <label>{t.childCode}
+        <input className="code-num" inputMode="numeric" maxLength={6} placeholder="0000" value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))} />
+        <span className="hint">{t.childCodeHint}</span>
+      </label>
+      {err && <div className="error">{err}</div>}
+      <button className="primary big" disabled={busy || phone.replace(/\D/g, '').length < 10 || code.length < 4}>{busy ? t.loading : t.login}</button>
+      <p className="muted small center-text">🔒 {t.autoLogin}</p>
+    </form>
   )
 }
 
