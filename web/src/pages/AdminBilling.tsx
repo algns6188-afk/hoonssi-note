@@ -66,8 +66,11 @@ export default function BillingTab({ students, member }: { students: Student[]; 
     .filter((i) => !q || nameOf(i.student_id).includes(q) || i.item_name.includes(q))
 
   const confirm = async (i: Invoice): Promise<void> => {
+    // 학부모가 "지역화폐(방문결제)"를 고른 건 → 단말기 결제로 기록
+    const local = i.reported_payer?.match(/^(.+)\(방문결제\)$/)?.[1]
     const { error } = await supabase.from('invoices').update({
-      status: 'paid', paid_at: new Date().toISOString(), paid_amount: i.amount, paid_method: 'transfer', confirmed_by: member.user_id
+      status: 'paid', paid_at: new Date().toISOString(), paid_amount: i.amount, paid_method: local ? 'card' : 'transfer', confirmed_by: member.user_id,
+      ...(local ? { paid_via: local } : {})
     }).eq('id', i.id)
     if (error) alert('처리 실패: ' + errText(error))
   }
@@ -364,6 +367,7 @@ function SettingsSheet({ items, member, onClose, reload }: { items: FeeItem[]; m
   const [bank, setBank] = useState({ bank_name: '', bank_account: '', account_holder: '', bank2_name: '', bank2_account: '', account2_holder: '' })
   const [toss, setToss] = useState<string | null>(null) // null = v10 전
   const [two, setTwo] = useState(true) // v9 실행돼서 2번 계좌 칸이 있는지
+  const [local, setLocal] = useState<string | null>(null) // null = v11 전
   const [rows, setRows] = useState(items.map((i) => ({ ...i, amountText: String(i.default_amount || '') })))
   const [newName, setNewName] = useState('')
   const [msg, setMsg] = useState<string | null>(null)
@@ -376,6 +380,8 @@ function SettingsSheet({ items, member, onClose, reload }: { items: FeeItem[]; m
       if (b.bank2_account === undefined) setTwo(false)
       const tk = (b as { toss_client_key?: string }).toss_client_key
       setToss(tk === undefined ? null : tk)
+      const lp = (b as { local_pay?: string }).local_pay
+      setLocal(lp === undefined ? null : lp)
       setBank({ bank_name: b.bank_name ?? '', bank_account: b.bank_account ?? '', account_holder: b.account_holder ?? '',
         bank2_name: b.bank2_name ?? '', bank2_account: b.bank2_account ?? '', account2_holder: b.account2_holder ?? '' })
     })
@@ -445,6 +451,23 @@ function SettingsSheet({ items, member, onClose, reload }: { items: FeeItem[]; m
               setMsg(error ? '저장 실패: ' + errText(error) : toss ? '✅ 카드·토스페이 결제를 켰어요. 학부모 화면에 [결제하기]가 보여요.' : '카드 결제를 껐어요.')
             }}>카드 결제 저장</button>}
             <p className="muted small">비워 두면 학부모 화면은 지금처럼 계좌이체 + "입금했어요"만 보여요.</p>
+          </>
+        )}
+
+        <h3>🏪 지역화폐 <span className="muted small">도장 카드단말기로 결제</span></h3>
+        {local === null ? <p className="notice">지역화폐는 Supabase에서 <b>schema-v11-local-pay.sql</b> 을 실행한 뒤 켤 수 있어요.</p> : (
+          <>
+            <label className="check">
+              <input type="checkbox" checked={!!local} disabled={!admin} onChange={(e) => setLocal(e.target.checked ? '경기지역화폐' : '')} />
+              <span>학부모 결제 화면에 지역화폐 보이기 <span className="muted small">(도장이 지역화폐 가맹점일 때만 켜세요)</span></span>
+            </label>
+            {!!local && <label>표시 이름<input value={local} disabled={!admin} onChange={(e) => setLocal(e.target.value)} placeholder="예: 경기지역화폐, 다온" /></label>}
+            {admin && <button className="primary" onClick={async () => {
+              const name = local!.trim()
+              const { error } = await supabase.from('orgs').update({ local_pay: name }).eq('id', member.org_id)
+              if (!error && name) await supabase.from('pay_methods').upsert([{ org_id: member.org_id, name, kind: 'card', sort: 5 }], { onConflict: 'org_id,name', ignoreDuplicates: true })
+              setMsg(error ? '저장 실패: ' + errText(error) : name ? `✅ 학부모 화면에 "${name} (도장에서 결제)"가 보여요. 학부모가 고르면 수납 탭 "입금 확인 대기"에 올라와요.` : '✅ 지역화폐를 껐어요.')
+            }}>지역화폐 저장</button>}
           </>
         )}
 

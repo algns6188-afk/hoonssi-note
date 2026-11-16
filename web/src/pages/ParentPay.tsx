@@ -122,7 +122,7 @@ export function ParentPayments({ kids }: { kids: Student[] }): JSX.Element | nul
                   <div className="bill-status">⏳ {t.payReported} · {t.payReportedBody}</div>
                 ) : (
                   <div className="bill-actions">
-                    {bank?.toss_client_key ? (
+                    {bank?.toss_client_key || bank?.local_pay ? (
                       <button className="primary" onClick={() => setPaying(i)}>💳 {t.payNow}</button>
                     ) : (
                       <>
@@ -162,7 +162,8 @@ export function ParentPayments({ kids }: { kids: Student[] }): JSX.Element | nul
       {toast && <div className="toast">{toast}</div>}
       {paying && bank && (
         <PaySheet invoice={paying} bank={bank} acc={accOf(paying)} kidName={kidName(paying.student_id)}
-          onClose={() => setPaying(null)} onReport={() => { setReporting(paying); setPaying(null) }} onCopied={() => flash(t.payCopied)} />
+          onClose={() => setPaying(null)} onReport={() => { setReporting(paying); setPaying(null) }} onCopied={() => flash(t.payCopied)}
+          onLocalDone={() => { setPaying(null); flash(t.payLocalSent); load() }} />
       )}
       {reporting && (
         <ReportSheet
@@ -232,7 +233,7 @@ function ReportSheet({ invoice, payers, onClose, onDone }: {
 
 /* ---------------- 결제 수단 고르기: 카드 · 토스페이 · 무통장 ---------------- */
 
-type PayKind = 'card' | 'tosspay' | 'bank'
+type PayKind = 'card' | 'tosspay' | 'bank' | 'local'
 declare global { interface Window { TossPayments?: unknown } }
 
 function loadTossSdk(): Promise<void> {
@@ -246,12 +247,24 @@ function loadTossSdk(): Promise<void> {
   })
 }
 
-function PaySheet({ invoice, bank, acc, kidName, onClose, onReport, onCopied }: {
+function PaySheet({ invoice, bank, acc, kidName, onClose, onReport, onCopied, onLocalDone }: {
   invoice: Invoice; bank: OrgBank; acc: BankAccount | null; kidName: string
-  onClose(): void; onReport(): void; onCopied(): void
+  onClose(): void; onReport(): void; onCopied(): void; onLocalDone(): void
 }): JSX.Element {
   const { t, lang } = useI18n()
-  const [kind, setKind] = useState<PayKind>('card')
+  const online = !!bank.toss_client_key
+  const local = bank.local_pay ?? ''
+  const [kind, setKind] = useState<PayKind>(online ? 'card' : 'bank')
+
+  /** 지역화폐: 도장에서 결제하겠다고 알림 → 관리자 화면 "확인 대기" → 단말기 결제 후 관장님이 확인 */
+  const sendLocal = async (): Promise<void> => {
+    setBusy(true)
+    setErr(null)
+    const { error } = await supabase.rpc('report_payment', { p_invoice: invoice.id, p_payer: `${local}(방문결제)` })
+    setBusy(false)
+    if (error) setErr(`${t.error} (${errText(error)})`)
+    else onLocalDone()
+  }
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const name = `${kidName} ${itemLabel(invoice.item_name, invoice.period, lang)}`.trim().slice(0, 90)
@@ -284,7 +297,11 @@ function PaySheet({ invoice, bank, acc, kidName, onClose, onReport, onCopied }: 
     }
   }
 
-  const opts: [PayKind, string, string][] = [['card', '💳', t.payCard], ['tosspay', '🔵', t.payTossPay], ['bank', '🏦', t.payBank]]
+  const opts: [PayKind, string, string][] = [
+    ...(online ? [['card', '💳', t.payCard], ['tosspay', '🔵', t.payTossPay]] as [PayKind, string, string][] : []),
+    ['bank', '🏦', t.payBank],
+    ...(local ? [['local', '🏪', t.payLocal.replace('{name}', local)]] as [PayKind, string, string][] : [])
+  ]
   return (
     <div className="sheet-bg" onClick={onClose}>
       <div className="sheet" onClick={(e) => e.stopPropagation()}>
@@ -314,6 +331,14 @@ function PaySheet({ invoice, bank, acc, kidName, onClose, onReport, onCopied }: 
                 <button className="primary big" onClick={onReport}>{t.payReport}</button>
               </>
             ) : <p className="notify-warn">{t.payNoAccount}</p>
+          ) : kind === 'local' ? (
+            <>
+              <div className="account-card">
+                <b>🏪 {local}</b>
+                <div className="small">{t.payLocalHint.replace('{name}', local)}</div>
+              </div>
+              <button className="primary big" disabled={busy} onClick={sendLocal}>{busy ? t.loading : t.payLocalBtn.replace('{name}', local)}</button>
+            </>
           ) : (
             <button className="primary big" disabled={busy} onClick={go}>{busy ? t.loading : `${won(invoice.amount, lang)} ${t.payGo} →`}</button>
           )}
