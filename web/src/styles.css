@@ -335,3 +335,39 @@ a.btn.call { background: var(--in-soft); padding: 8px 10px; }
 .code-num { font-size: 26px; letter-spacing: 8px; text-align: center; font-weight: 700; }
 .center-text { text-align: center; margin: 0; }
 .link-btn.small { font-size: 14px; }
+
+/* ---------- 수납 표 보기 (에듀패밀리식) ---------- */
+.view-toggle { display: inline-flex; gap: 4px; margin-left: auto; }
+.view-toggle .pill { padding: 4px 10px; }
+.notice { background: #fff8e1; color: #7a5b00; border: 1px solid #f3e0a0; border-radius: 8px; padding: 10px 12px; font-size: 14px; margin: 8px 0; }
+.bt-filters, .bt-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 8px 0; }
+.bt-filters select, .bt-filters input { padding: 6px 8px; font-size: 13px; width: auto; }
+.bt-search { min-width: 180px; flex: 1; }
+.bt-actions button { padding: 6px 10px; font-size: 13px; white-space: nowrap; }
+.bt-actions > span { margin-right: auto; }
+.bt-msg { background: var(--in-soft); color: var(--in); border-radius: 8px; padding: 8px 12px; font-size: 14px; margin-bottom: 8px; }
+.bt-wrap { overflow: auto; max-height: calc(100vh - 260px); border: 1px solid var(--line); border-radius: 10px; background: #fff; }
+.bt-table { border-collapse: collapse; font-size: 13px; width: max-content; min-width: 100%; }
+.bt-table th, .bt-table td { border-bottom: 1px solid var(--line); border-right: 1px solid #eef0f3; padding: 4px 6px; white-space: nowrap; text-align: center; vertical-align: middle; }
+.bt-table thead th { position: sticky; top: 0; background: #f4f6f9; z-index: 2; font-weight: 600; }
+.bt-table thead .bt-total td { position: sticky; top: 29px; background: #eef4ff; font-weight: 700; z-index: 2; }
+.bt-table td.num, .bt-table input.num { text-align: right; }
+.bt-table input, .bt-table select { font-size: 13px; padding: 3px 5px; width: auto; min-width: 0; border-radius: 6px; }
+.bt-table input.num { width: 84px; }
+.bt-table input[type=date] { width: 128px; }
+.bt-table .bt-memo { width: 140px; }
+.bt-table td:nth-child(13) input { width: 120px; }
+.bt-table .bt-name { font-weight: 700; }
+.bt-table tr.dirty td { background: #fff7d6; }
+.bt-table tr.st-row-canceled td { color: #aaa; text-decoration: line-through; }
+.bt-table .tiny { font-size: 11px; }
+.st-sel.st-paid { color: var(--in); font-weight: 700; }
+.st-sel.st-unpaid { color: var(--danger); font-weight: 700; }
+.st-sel.st-reported { color: #b26a00; font-weight: 700; }
+.small-btn.issued { background: var(--in-soft); color: var(--in); border-color: transparent; }
+@media print {
+  .tabbar, .month-nav button, .view-toggle, .bt-filters, .bt-actions, .billing > .row, .reported-box, .assistant, .notice { display: none !important; }
+  .bt-wrap { max-height: none; overflow: visible; border: 0; }
+  .bt-table th:first-child, .bt-table td:first-child, .bt-table th:last-child, .bt-table td:last-child { display: none; }
+  .bt-table input, .bt-table select, .bt-table button { border: 0; background: none; appearance: none; padding: 0; }
+}

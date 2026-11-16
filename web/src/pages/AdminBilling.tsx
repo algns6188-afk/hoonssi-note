@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase, errText, type Member, type Student } from '../supabase'
+import BillingTable from './BillingTable'
+import type { StudentFull } from './StudentForm'
 import { itemLabel, periodLabel, shiftPeriod, thisPeriod, won, type FeeItem, type Invoice } from '../billing'
 
 type StudentB = Student & { monthly_fee: number | null; auto_bill: boolean }
@@ -27,6 +29,11 @@ export default function BillingTab({ students, member }: { students: Student[]; 
   const [detail, setDetail] = useState<Invoice | null>(null)
   const [q, setQ] = useState('')
   const [loaded, setLoaded] = useState(false)
+  const [view, setView] = useState<'table' | 'card'>(() => {
+    try { const v = localStorage.getItem('billing-view'); if (v === 'table' || v === 'card') return v } catch { /* 무시 */ }
+    return window.innerWidth >= 900 ? 'table' : 'card'
+  })
+  const changeView = (v: 'table' | 'card'): void => { setView(v); try { localStorage.setItem('billing-view', v) } catch { /* 무시 */ } }
   const studs = students as StudentB[]
 
   const load = useCallback(async () => {
@@ -75,7 +82,11 @@ export default function BillingTab({ students, member }: { students: Student[]; 
         <button onClick={() => setPeriod(shiftPeriod(period, -1))}>◀</button>
         <b>{periodLabel(period)}</b>
         <button onClick={() => setPeriod(shiftPeriod(period, 1))}>▶</button>
-        <button className="ghost small-btn right" onClick={() => setSheet('settings')}>⚙️ 수납 설정</button>
+        <span className="right view-toggle">
+          <button className={view === 'card' ? 'pill on' : 'pill'} onClick={() => changeView('card')}>🗂 카드</button>
+          <button className={view === 'table' ? 'pill on' : 'pill'} onClick={() => changeView('table')}>📋 표</button>
+        </span>
+        <button className="ghost small-btn" onClick={() => setSheet('settings')}>⚙️ 수납 설정</button>
       </div>
 
       <div className="stats3">
@@ -107,6 +118,9 @@ export default function BillingTab({ students, member }: { students: Student[]; 
         </section>
       )}
 
+      {view === 'table' ? (
+        <BillingTable invoices={invoices} period={period} students={students as StudentFull[]} items={items} member={member} />
+      ) : (<>
       <input className="search" placeholder="학생 이름·항목 검색" value={q} onChange={(e) => setQ(e.target.value)} />
       <div className="pills">
         {([['open', '미납·확인대기'], ['reported', '확인 대기'], ['paid', '납부'], ['all', '전체']] as const).map(([id, label]) => (
@@ -128,6 +142,7 @@ export default function BillingTab({ students, member }: { students: Student[]; 
           ))}
         </ul>
       )}
+      </>)}
 
       {sheet === 'monthly' && <MonthlySheet students={studs} items={items} invoices={invoices} onClose={() => setSheet(null)} />}
       {sheet === 'bill' && <BillSheet students={studs} items={items} onClose={() => setSheet(null)} />}
