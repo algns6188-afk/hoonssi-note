@@ -199,9 +199,29 @@ body.dark-top { background: var(--side); }
 .kiosk { padding-top: calc(12px + env(safe-area-inset-top)); padding-left: calc(20px + env(safe-area-inset-left)); padding-right: calc(20px + env(safe-area-inset-right)); }
 .kiosk-top { min-height: 48px; position: relative; z-index: 2; }
 .auth { padding-top: calc(16px + env(safe-area-inset-top)); }
-.sheet { max-height: calc(100vh - env(safe-area-inset-top) - 12px); }
+.sheet { max-height: calc(100vh - env(safe-area-inset-top) - 12px); max-height: calc(100dvh - env(safe-area-inset-top) - 12px); overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+/* 창 제목·닫기 버튼은 스크롤해도 항상 위에 고정 */
+.sheet-head { position: sticky; top: -16px; z-index: 3; background: var(--bg); margin: -16px -16px 12px; padding: 14px 16px 10px; border-bottom: 1px solid var(--line); }
+.sheet-head > button { font-size: 15px; font-weight: 700; padding: 8px 14px; }
+/* 휴대폰: 윗줄 버튼이 많으면 다음 줄로 (화면이 옆으로 밀리지 않게) */
+.month-nav { flex-wrap: wrap; row-gap: 6px; }
+.mobile { overflow-x: clip; }
+@media (max-width: 899px) {
+  .billing .month-nav b { min-width: 0; flex: 1; white-space: nowrap; }
+  .billing .month-nav > button:not(.small-btn) { padding: 6px 10px; }
+  .billing .month-nav .view-toggle { margin-left: 0; }
+  .billing .month-nav > .small-btn { margin-left: auto; }
+}
+@media (max-width: 380px) {
+  .billing .stats3 { gap: 6px; }
+  .billing .stats3 > div { padding: 10px 4px; min-width: 0; }
+  .billing .stats3 b { font-size: 13px; }
+}
+/* 창이 열려 있으면 뒤 화면은 안 움직이게 */
+body:has(.sheet-bg) { overflow: hidden; }
 @media (min-width: 900px) {
   .sheet { max-height: none; padding-top: calc(24px + env(safe-area-inset-top)); }
+  .sheet-head { top: calc(-24px - env(safe-area-inset-top)); margin: calc(-24px - env(safe-area-inset-top)) -24px 12px; padding: calc(18px + env(safe-area-inset-top)) 24px 12px; }
   .tabbar { padding-top: calc(20px + env(safe-area-inset-top)); }
 }
 @media (max-width: 420px) {
