@@ -20,7 +20,7 @@ function useErr(): (e: unknown) => string {
   const { t } = useI18n()
   return (e) => {
     const m = errText(e)
-    for (const k of ['invalid_code', 'expired_code', 'used_code', 'other_org', 'no_match', 'locked', 'bad_phone'] as const) if (m.includes(k)) return t[k]
+    for (const k of ['invalid_code', 'expired_code', 'used_code', 'other_org', 'no_match', 'locked', 'busy', 'bad_phone'] as const) if (m.includes(k)) return t[k]
     if (/invalid login/i.test(m)) return t.wrongLogin
     if (/already registered|already exists/i.test(m)) return t.idTaken
     return `${t.error} (${m})`
@@ -74,7 +74,6 @@ function PhoneLoginForm(): JSX.Element {
   const { t } = useI18n()
   const toErr = useErr()
   const [phone, setPhone] = useState('')
-  const [code, setCode] = useState('')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const fmt = (v: string): string => {
@@ -85,7 +84,7 @@ function PhoneLoginForm(): JSX.Element {
     setBusy(true)
     setErr(null)
     try {
-      const { data, error } = await supabase.rpc('phone_login_prepare', { p_phone: phone, p_code: code })
+      const { data, error } = await supabase.rpc('phone_login_prepare', { p_phone: phone })
       if (error) throw error
       const r = data as { email?: string; password?: string; error?: string }
       if (r.error || !r.email) throw new Error(r.error ?? 'no_match')
@@ -102,12 +101,8 @@ function PhoneLoginForm(): JSX.Element {
         <input inputMode="tel" autoComplete="tel" placeholder="010-0000-0000" value={phone} onChange={(e) => setPhone(fmt(e.target.value))} />
         <span className="hint">{t.guardianPhoneHint}</span>
       </label>
-      <label>{t.childCode}
-        <input className="code-num" inputMode="numeric" maxLength={6} placeholder="0000" value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))} />
-        <span className="hint">{t.childCodeHint}</span>
-      </label>
       {err && <div className="error">{err}</div>}
-      <button className="primary big" disabled={busy || phone.replace(/\D/g, '').length < 10 || code.length < 4}>{busy ? t.loading : t.login}</button>
+      <button className="primary big" disabled={busy || phone.replace(/\D/g, '').length < 10}>{busy ? t.loading : t.login}</button>
       <p className="muted small center-text">🔒 {t.autoLogin}</p>
     </form>
   )

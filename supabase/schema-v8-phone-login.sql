@@ -1,6 +1,6 @@
--- 강철노트 v8: 학부모 "전화번호 + 자녀 출석번호" 로그인
+-- 강철노트 v8: 학부모 "전화번호만" 로그인
 -- schema-v7-shuttle.sql 다음에 실행. 여러 번 실행해도 안전합니다.
--- 원생 명단의 보호자 연락처(student_contacts)에 있는 전화번호 + 그 집 아이의 출석번호가 맞으면
+-- 원생 명단의 보호자 연락처(student_contacts)에 있는 전화번호면 (출석번호는 넣으면 확인, 안 넣어도 됨)
 -- 학부모 계정을 만들거나(처음) 다시 열어 주고, 그 번호가 등록된 아이들을 모두 연결합니다.
 
 create schema if not exists private;
@@ -14,13 +14,15 @@ create index if not exists phone_login_attempts_idx on private.phone_login_attem
 create or replace function public.phone_digits(p text) returns text
 language sql immutable as $$ select regexp_replace(coalesce(p, ''), '\D', '', 'g') $$;
 
-create or replace function public.phone_login_prepare(p_phone text, p_code text)
+drop function if exists public.phone_login_prepare(text, text);
+create or replace function public.phone_login_prepare(p_phone text, p_code text default null)
 returns jsonb
 language plpgsql security definer set search_path = public, extensions, auth as $$
 declare
   v_phone text := public.phone_digits(p_phone);
   v_code text := trim(coalesce(p_code, ''));
   v_fail int;
+  v_all int;
   v_kid record;
   v_org uuid;
   v_email text;
@@ -35,11 +37,16 @@ begin
   select count(*) into v_fail from private.phone_login_attempts
    where phone = v_phone and not ok and at > now() - interval '30 minutes';
   if v_fail >= 10 then return jsonb_build_object('error', 'locked'); end if;
+  -- 남의 번호를 이것저것 넣어 보는 것 방지: 10분 안에 전체 틀린 시도가 30번 넘으면 잠시 막음
+  select count(*) into v_all from private.phone_login_attempts
+   where not ok and at > now() - interval '10 minutes';
+  if v_all >= 30 then return jsonb_build_object('error', 'busy'); end if;
 
-  -- 이 전화번호가 보호자로 등록된 아이 중 출석번호가 맞는 아이
+  -- 이 전화번호가 보호자로 등록된 아이 (출석번호를 넣었으면 그것도 맞아야 함)
   select s.id, s.org_id, c.name as cname, c.relation into v_kid
     from public.student_contacts c join public.students s on s.id = c.student_id
-   where public.phone_digits(c.phone) = v_phone and s.active and s.code = v_code
+   where public.phone_digits(c.phone) = v_phone and s.active and (v_code = '' or s.code = v_code)
+   order by c.sort
    limit 1;
   if v_kid.id is null then
     -- 오류로 끝내면 기록까지 취소되므로, 기록을 남기고 결과로 알려줌
@@ -98,3 +105,4 @@ end $$;
 
 revoke all on function public.phone_login_prepare(text, text) from public;
 grant execute on function public.phone_login_prepare(text, text) to anon, authenticated;
+notify pgrst, 'reload schema';
