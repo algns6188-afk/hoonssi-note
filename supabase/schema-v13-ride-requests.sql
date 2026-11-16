@@ -79,7 +79,7 @@ begin
   if p_scope = 'once' and p_date is null then return jsonb_build_object('error', 'bad_request'); end if;
 
   -- 마감: 하루 신청은 출발 cutoff 분 전까지. 지나면 사유 필수, 출발 뒤엔 신청 불가
-  if p_scope = 'once' then
+  if p_scope = 'once' and not public.is_staff() then   -- 관리자·선생님은 마감 시간 상관없이 입력 가능
     select rs.run_id into v_run from public.run_stops rs where rs.id = coalesce(p_from, p_to);
     select cutoff_minutes into v_cut from public.runs where id = v_run;
     v_dep := public.run_departure(v_run, p_date);

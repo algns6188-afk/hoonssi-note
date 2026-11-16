@@ -482,18 +482,26 @@ function ReqLine({ data, q, name, onCancel }: { data: ShuttleData; q: RideReques
   )
 }
 
-/** 학부모 신청서: 누가 · 언제 · 무엇을(안 탐/탐/장소 변경) · 어디 */
-function RequestSheet({ data, kids, onClose, onDone }: { data: ShuttleData; kids: { id: string; name: string }[]; onClose(): void; onDone(): void }): JSX.Element {
+/** 신청서 (학부모) / 변경 입력 (관리자: 바로 반영, 마감 없음, 학부모 신청 고쳐서 승인) */
+export function RequestSheet({ data, kids, onClose, onDone, admin, initial, orgId }: {
+  data: ShuttleData; kids: { id: string; name: string }[]; onClose(): void; onDone(): void
+  admin?: boolean; initial?: RideRequest; orgId?: string
+}): JSX.Element {
   const { t } = useI18n()
-  const [kid, setKid] = useState(kids[0]?.id ?? '')
-  const [scope, setScope] = useState<'once' | 'always'>('once')
-  const [date, setDate] = useState(kstDate())
-  const [kind, setKind] = useState<'skip' | 'add' | 'change'>('skip')
-  const [from, setFrom] = useState('')
-  const [runId, setRunId] = useState('')
-  const [to, setTo] = useState('')
-  const [action, setAction] = useState<'board' | 'alight'>('board')
-  const [reason, setReason] = useState('')
+  const [extra, setExtra] = useState<{ id: string; name: string }[]>([])   // 방금 등록한 신입생
+  const allKids = [...kids, ...extra]
+  const [nw, setNw] = useState({ group: '초등부', session: '', phone: '', relation: '어머니' })
+  const initRun = initial?.to_run_stop_id ? data.runStops.find((x) => x.id === initial.to_run_stop_id)?.run_id ?? '' : ''
+  const [kid, setKid] = useState(initial?.student_id ?? (admin ? '' : kids[0]?.id ?? ''))
+  const [kidQ, setKidQ] = useState(initial ? kids.find((k) => k.id === initial.student_id)?.name ?? '' : '')
+  const [scope, setScope] = useState<'once' | 'always'>(initial?.scope ?? 'once')
+  const [date, setDate] = useState(initial?.date ?? kstDate())
+  const [kind, setKind] = useState<'skip' | 'add' | 'change'>(initial?.kind ?? 'skip')
+  const [from, setFrom] = useState(initial?.from_run_stop_id ?? '')
+  const [runId, setRunId] = useState(initRun)
+  const [to, setTo] = useState(initial?.to_run_stop_id ?? '')
+  const [action, setAction] = useState<'board' | 'alight'>(initial?.action ?? 'board')
+  const [reason, setReason] = useState(initial?.reason ?? '')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
 
@@ -527,20 +535,38 @@ function RequestSheet({ data, kids, onClose, onDone }: { data: ShuttleData; kids
   const depRun = depRs && data.runs.find((r) => r.id === depRs.run_id)
   const dep = scope === 'once' && depRs ? Date.parse(`${date}T${depRs.at_time.slice(0, 5)}:00+09:00`) : null
   const cut = dep && depRun ? dep - depRun.cutoff_minutes * 60_000 : null
-  const late = !!cut && Date.now() > cut
-  const departed = !!dep && Date.now() > dep
+  const late = !admin && !!cut && Date.now() > cut
+  const departed = !admin && !!dep && Date.now() > dep
 
   const ready = kid && (kind === 'add' ? !!to : !!from) && (kind !== 'change' || !!to) && (!late || reason.trim()) && !departed
   const send = async (): Promise<void> => {
     setBusy(true)
     setErr(null)
-    const { data: r, error } = await supabase.rpc('submit_ride_request', {
-      p_student: kid, p_kind: kind, p_scope: scope, p_date: scope === 'once' ? date : null,
-      p_from: kind === 'add' ? null : from, p_to: kind === 'skip' ? null : to,
-      p_action: kind === 'add' ? action : current.find((c) => c.rs.id === from)?.r.action ?? 'board', p_weekdays: null, p_reason: reason.trim()
-    })
+    const fields = {
+      student_id: kid, kind, scope, date: scope === 'once' ? date : null,
+      from_run_stop_id: kind === 'add' ? null : from, to_run_stop_id: kind === 'skip' ? null : to,
+      action: kind === 'add' ? action : current.find((c) => c.rs.id === from)?.r.action ?? 'board', reason: reason.trim()
+    }
+    let id = initial?.id
+    let e: string | undefined
+    if (initial) {
+      // 학부모 신청을 고쳐서 승인
+      const { error } = await supabase.from('ride_requests').update(fields).eq('id', initial.id)
+      if (error) e = errText(error)
+    } else {
+      const { data: r, error } = await supabase.rpc('submit_ride_request', {
+        p_student: fields.student_id, p_kind: kind, p_scope: scope, p_date: fields.date,
+        p_from: fields.from_run_stop_id, p_to: fields.to_run_stop_id, p_action: fields.action, p_weekdays: null, p_reason: fields.reason
+      })
+      e = error ? errText(error) : (r as { error?: string })?.error
+      id = (r as { id?: string })?.id
+    }
+    if (!e && admin && id) {
+      // 관리자가 넣은 건 바로 반영
+      const { data: r, error } = await supabase.rpc('decide_ride_request', { p_id: id, p_ok: true, p_note: initial ? '관리자가 수정해서 반영' : '' })
+      e = error ? errText(error) : (r as { error?: string })?.error
+    }
     setBusy(false)
-    const e = error ? errText(error) : (r as { error?: string })?.error
     if (e) setErr(e === 'departed' ? t.rqDeparted : e === 'reason_required' ? t.rqReasonNeeded : `${t.error} (${e})`)
     else onDone()
   }
@@ -548,11 +574,59 @@ function RequestSheet({ data, kids, onClose, onDone }: { data: ShuttleData; kids
   return (
     <div className="sheet-bg" onClick={onClose}>
       <div className="sheet" onClick={(e) => e.stopPropagation()}>
-        <div className="sheet-head"><h2>✏️ {t.rqButton}</h2><button className="ghost" onClick={onClose}>✕</button></div>
+        <div className="sheet-head"><h2>✏️ {admin ? (initial ? '신청 고쳐서 승인' : '차량 변경 입력') : t.rqButton}</h2><button className="ghost" onClick={onClose}>✕</button></div>
+        {admin && <p className="muted small" style={{ marginTop: 0 }}>저장하면 바로 차량표에 반영되고, 바뀐 자리에 표시돼요. 관리자는 마감 시간 제한이 없어요.</p>}
         <div className="form">
+          {admin ? (
+            <label>학생
+              <input list="rq-kids" value={kidQ} placeholder="이름 입력" onChange={(e) => {
+                setKidQ(e.target.value)
+                const k = allKids.find((x) => x.name === e.target.value.trim())
+                setKid(k?.id ?? ''); setFrom(''); setTo('')
+              }} />
+              <datalist id="rq-kids">{allKids.map((k) => <option key={k.id} value={k.name} />)}</datalist>
+              {kidQ && !kid && <span className="hint">목록에서 정확한 이름을 고르거나, 아래에서 신입생으로 등록하세요.</span>}
+            </label>
+          ) : null}
+          {admin && kidQ.trim().length >= 2 && !kid && orgId && (
+            <div className="new-kid">
+              <b>🆕 "{kidQ.trim()}" 신입생으로 등록</b>
+              <div className="row">
+                <select value={nw.group} onChange={(e) => setNw({ ...nw, group: e.target.value })}>
+                  {['초등부', '유치부', '중고등', '선수단', '입시반', '일반부'].map((g) => <option key={g}>{g}</option>)}
+                </select>
+                <select value={nw.session} onChange={(e) => setNw({ ...nw, session: e.target.value })}>
+                  <option value="">부 미정</option>{[1, 2, 3, 4, 5, 6].map((n) => <option key={n} value={n}>{n}부</option>)}
+                </select>
+              </div>
+              <div className="row">
+                <input className="grow" inputMode="tel" placeholder="보호자 전화번호 (학부모 로그인용)" value={nw.phone} onChange={(e) => setNw({ ...nw, phone: e.target.value })} />
+                <input style={{ width: 90 }} placeholder="관계" value={nw.relation} onChange={(e) => setNw({ ...nw, relation: e.target.value })} />
+              </div>
+              <button disabled={busy} onClick={async () => {
+                setBusy(true); setErr(null)
+                const name = kidQ.trim()
+                let id: string | undefined; let lastErr = ''
+                for (let i = 0; i < 6 && !id; i++) {
+                  const code = String(Math.floor(1000 + Math.random() * 9000))
+                  const { data: row, error } = await supabase.from('students').insert({ org_id: orgId, name, code, group_name: nw.group, session_no: nw.session ? Number(nw.session) : null, active: true }).select('id').single()
+                  if (error) lastErr = errText(error); else id = (row as { id: string }).id
+                }
+                if (id && nw.phone.replace(/\D/g, '').length >= 9) {
+                  await supabase.from('student_contacts').insert({ student_id: id, name: '', phone: nw.phone.trim(), relation: nw.relation.trim(), sort: 0 })
+                }
+                setBusy(false)
+                if (!id) { setErr('신입생 등록 실패: ' + lastErr); return }
+                setExtra([...extra, { id, name }]); setKid(id); setKind('add'); setScope('always')
+              }}>+ 신입생 등록하고 차량 배정하기</button>
+              <span className="hint">출석번호는 자동으로 정해져요. 자세한 정보는 나중에 🥋 학생 탭에서 채우세요.</span>
+            </div>
+          )}
+          {admin ? null : (<>
           {kids.length > 1 && (
             <div className="pills">{kids.map((k) => <button key={k.id} className={kid === k.id ? 'pill on' : 'pill'} onClick={() => { setKid(k.id); setFrom(''); setTo('') }}>{k.name}</button>)}</div>
           )}
+          </>)}
           <label>{t.rqWhen}
             <div className="seg">
               <button className={scope === 'once' ? 'on' : ''} onClick={() => setScope('once')}>{t.rqOnce}</button>
@@ -614,7 +688,7 @@ function RequestSheet({ data, kids, onClose, onDone }: { data: ShuttleData; kids
           </label>
           {scope === 'always' && <p className="muted small">{t.rqAlwaysHint}</p>}
           {err && <div className="error">{err}</div>}
-          <button className="primary big" disabled={busy || !ready} onClick={send}>{busy ? t.loading : t.rqSend}</button>
+          <button className="primary big" disabled={busy || !ready} onClick={send}>{busy ? t.loading : admin ? '✓ 저장하고 바로 반영' : t.rqSend}</button>
         </div>
       </div>
     </div>

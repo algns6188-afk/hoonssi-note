@@ -530,3 +530,9 @@ a.btn.call { background: var(--in-soft); padding: 8px 10px; }
 .chip.rq-pending { background: #fff1d6; color: #9a6200; }
 .chip.rq-approved { background: #e3f4e6; color: #1f7a3a; }
 .chip.rq-rejected { background: #fde8e4; color: #c23d22; }
+.rider .undo { border: 0; background: #fff; border-radius: 6px; padding: 0 5px; margin-left: 4px; font-size: 12px; cursor: pointer; text-decoration: none; }
+.new-kid { display: flex; flex-direction: column; gap: 6px; background: #f2f6ff; border: 1px dashed #9db4f0; border-radius: 12px; padding: 12px; }
+.new-kid .row select, .new-kid .row input { width: auto; }
+.new-kid .row { flex-wrap: nowrap; min-width: 0; }
+.new-kid .row input.grow { min-width: 0; flex: 1; }
+.new-kid .row input[placeholder="관계"] { width: 76px !important; flex: none; }

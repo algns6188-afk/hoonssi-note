@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase, errText, type Member, type Student } from '../supabase'
-import { DriverMode, PickMap, RouteView, usePlace, useTrips } from './ShuttleLive'
+import { DriverMode, PickMap, RequestSheet, RouteView, usePlace, useTrips } from './ShuttleLive'
 
 /* ---------------- 데이터 ---------------- */
 
@@ -119,6 +119,7 @@ export default function ShuttleTab({ students, member }: { students: Student[]; 
   const [sheet, setSheet] = useState<'stops' | 'vehicle' | null>(null)
   const [q, setQ] = useState('')
   const [driving, setDriving] = useState<Run | null>(null)
+  const [changing, setChanging] = useState<RideRequest | 'new' | null>(null)
   const { trips, v9: liveOk } = useTrips()
   const place = usePlace()
 
@@ -154,6 +155,16 @@ export default function ShuttleTab({ students, member }: { students: Student[]; 
   const isToday = day === todayDay()
   const date = nextDateOf(day)
   const pending = data.requests.filter((q) => q.status === 'pending')
+  /** 하루 변경(안 탐·추가) 되돌리기 */
+  const undoException = async (v: { student_id: string; tag: string; key: string; action: string }, rsId: string): Promise<void> => {
+    const ex = data.exceptions.find((e) => (v.tag === 'add' ? e.id === v.key : e.student_id === v.student_id && e.type === 'skip' && e.date === date && e.run_stop_id === rsId && e.action === v.action))
+    if (!ex || !window.confirm(`${nameOf(v.student_id)} ${date.slice(5).replace('-', '/')} ${v.tag === 'skip' ? '안 탐' : '추가'}을 취소하고 원래대로 돌릴까요?`)) return
+    const { error } = await supabase.from('ride_exceptions').delete().eq('id', ex.id)
+    if (error) return alert('실패: ' + errText(error))
+    await supabase.from('timeline').insert({ org_id: member.org_id, kind: 'shuttle', student_id: v.student_id,
+      summary: `↩ ${nameOf(v.student_id)} ${date.slice(5).replace('-', '/')} 차량 ${v.tag === 'skip' ? '안 탐' : '추가'} 취소 (원래대로)` })
+    load()
+  }
   const runs = data.runs.filter((r) => r.active && has(r.weekdays, day))
   const vehicle = data.vehicles[0]
 
@@ -165,6 +176,7 @@ export default function ShuttleTab({ students, member }: { students: Student[]; 
         </div>
         <button className="ghost small-btn" onClick={() => setSheet('stops')}>📍 정류장 {data.stops.length}</button>
         <button className="ghost small-btn" onClick={() => setSheet('vehicle')}>🚐 {vehicle?.name ?? '차량'}</button>
+        {data.requestsOk && <button className="primary small-btn" onClick={() => setChanging('new')}>✏️ 변경 입력</button>}
       </div>
       <p className="muted small">{date.slice(5).replace('-', '/')}({day}) 기준 · 하루 변경(안 탐·추가)과 최근 7일 안에 바뀐 자리가 표시돼요.</p>
       {!data.requestsOk && <p className="notice small">학부모 차량 변경 신청은 Supabase에서 <b>schema-v13-ride-requests.sql</b> 을 실행한 뒤 쓸 수 있어요.</p>}
@@ -180,7 +192,11 @@ export default function ShuttleTab({ students, member }: { students: Student[]; 
         </ul>
       )}
 
-      {pending.length > 0 && <RequestsBox data={data} requests={pending} nameOf={nameOf} reload={load} />}
+      {pending.length > 0 && <RequestsBox data={data} requests={pending} nameOf={nameOf} reload={load} onEdit={(q) => setChanging(q)} />}
+      {changing && (
+        <RequestSheet data={data} kids={students.filter((s) => s.active).map((s) => ({ id: s.id, name: s.name }))} admin orgId={member.org_id}
+          initial={changing === 'new' ? undefined : changing} onClose={() => setChanging(null)} onDone={() => { setChanging(null); load() }} />
+      )}
 
       {runs.map((run) => {
         const list = stopsOn(data, run, day, date)
@@ -232,6 +248,9 @@ export default function ShuttleTab({ students, member }: { students: Student[]; 
                               {v.ride?.weekdays ? <small>({v.ride.weekdays.replace(/,/g, '')})</small> : null}
                               {v.tag === 'skip' && <em>{date.slice(5).replace('-', '/')} 안 탐</em>}
                               {v.tag === 'add' && <em>{date.slice(5).replace('-', '/')} 추가</em>}
+                              {(v.tag === 'skip' || v.tag === 'add') && (
+                                <button className="undo" title="하루 변경 취소" onClick={(e) => { e.stopPropagation(); undoException(v, rs.id) }}>↩</button>
+                              )}
                               {v.tag === 'moved' && <em>{v.to ? `→ ${v.to} 로 변경` : '이용 중단'}</em>}
                               {v.tag === 'new' && <em>새로 변경됨</em>}
                               {v.note && v.tag && <small> · {v.note}</small>}
@@ -521,7 +540,7 @@ export function describeRequest(data: ShuttleData, q: RideRequest): { what: stri
   }
 }
 
-function RequestsBox({ data, requests, nameOf, reload }: { data: ShuttleData; requests: RideRequest[]; nameOf(id: string): string; reload(): Promise<void> }): JSX.Element {
+function RequestsBox({ data, requests, nameOf, reload, onEdit }: { data: ShuttleData; requests: RideRequest[]; nameOf(id: string): string; reload(): Promise<void>; onEdit(q: RideRequest): void }): JSX.Element {
   const [busy, setBusy] = useState<string | null>(null)
   const vehicle = data.vehicles[0]
   const decide = async (q: RideRequest, ok: boolean): Promise<void> => {
@@ -565,6 +584,7 @@ function RequestsBox({ data, requests, nameOf, reload }: { data: ShuttleData; re
               </div>
               <div className="col">
                 <button className="primary small-btn" disabled={busy === q.id} onClick={() => decide(q, true)}>승인</button>
+                <button className="ghost small-btn" disabled={busy === q.id} onClick={() => onEdit(q)}>수정</button>
                 <button className="ghost small-btn" disabled={busy === q.id} onClick={() => decide(q, false)}>거절</button>
               </div>
             </li>
