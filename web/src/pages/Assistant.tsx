@@ -61,10 +61,10 @@ export default function AssistantBox(): JSX.Element {
       setErr(
         m === 'no_api_key'
           ? 'AI 키가 아직 서버에 없어요. Supabase → Edge Functions → Secrets 에 ANTHROPIC_API_KEY 를 넣어 주세요.'
-          : /invalid x-api-key|authentication_error|401/.test(m)
-            ? 'AI 키가 맞지 않아요. Supabase 비밀값 ANTHROPIC_API_KEY 에 Claude 키(sk-ant-api03-…로 시작)를 정확히 넣었는지 확인해 주세요. GPT(OpenAI) 키는 쓸 수 없어요.'
-            : /credit balance|billing|402/i.test(m)
-              ? 'AI 크레딧이 부족해요. console.anthropic.com → Billing 에서 충전해 주세요.'
+          : /invalid x-api-key|invalid_api_key|authentication_error|Incorrect API key|401/.test(m)
+            ? 'AI 키가 맞지 않아요. Supabase 비밀값(ANTHROPIC_API_KEY 또는 OPENAI_API_KEY)에 Claude 키(sk-ant-…) 또는 GPT 키(sk-…)를 앞뒤 공백 없이 정확히 넣었는지 확인해 주세요.'
+            : /credit balance|insufficient_quota|billing|402/i.test(m)
+              ? 'AI 사용 요금(크레딧)이 부족해요. GPT 키면 platform.openai.com → Billing, Claude 키면 console.anthropic.com → Billing 에서 충전해 주세요.'
               : /rate_limit|429|overloaded|529/i.test(m)
                 ? 'AI가 잠시 바빠요. 몇 초 뒤 다시 [정리]를 눌러 주세요.'
                 : m === 'refusal'

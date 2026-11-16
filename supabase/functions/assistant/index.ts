@@ -118,9 +118,42 @@ async function loadContext(org: string) {
 
 /* ---------------- 1) 해석 (미리보기) ---------------- */
 
+/**
+ * AI 키 고르기: 키 모양을 보고 Claude(sk-ant-…) / GPT(OpenAI, sk-proj-… · sk-…) 를 자동 선택.
+ * Supabase 비밀값 이름은 ANTHROPIC_API_KEY 또는 OPENAI_API_KEY 아무거나 써도 됨.
+ */
+function pickAi(): { provider: 'claude' | 'openai'; key: string } | null {
+  const a = (Deno.env.get('ANTHROPIC_API_KEY') ?? '').trim()
+  const o = (Deno.env.get('OPENAI_API_KEY') ?? '').trim()
+  if (a.startsWith('sk-ant-')) return { provider: 'claude', key: a }
+  if (o) return { provider: 'openai', key: o }
+  if (a) return { provider: a.startsWith('sk-') ? 'openai' : 'claude', key: a }
+  return null
+}
+
+/** GPT(OpenAI)로 해석 — 같은 JSON 형식으로 받음 */
+async function askOpenAI(key: string, system: string, user: string): Promise<string> {
+  const res = await fetch((Deno.env.get('OPENAI_BASE_URL') ?? 'https://api.openai.com/v1') + '/chat/completions', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: Deno.env.get('OPENAI_MODEL') ?? 'gpt-4.1-mini',
+      messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
+      response_format: { type: 'json_schema', json_schema: { name: 'plan', strict: true, schema: SCHEMA } }
+    })
+  })
+  const body = await res.text()
+  if (!res.ok) throw new Error(`openai ${res.status} ${body.slice(0, 300)}`)
+  const j = JSON.parse(body)
+  const msg = j.choices?.[0]?.message
+  if (msg?.refusal) throw new Error('refusal')
+  if (!msg?.content) throw new Error('empty')
+  return msg.content as string
+}
+
 async function plan(text: string, org: string) {
-  const key = Deno.env.get('ANTHROPIC_API_KEY')
-  if (!key) return { error: 'no_api_key' }
+  const ai = pickAi()
+  if (!ai) return { error: 'no_api_key' }
   const ctx = await loadContext(org)
   const ids = new Set(ctx.students.map((s) => s.id))
   const payersOf = (id: string) => ctx.payers.filter((p) => p.student_id === id).map((p) => p.name)
@@ -141,6 +174,22 @@ async function plan(text: string, org: string) {
     ...ctx.items.map((i) => `${i.name} | ${i.default_amount} | ${i.monthly ? '예' : '아니오'}`)
   ].join('\n')
 
+  const userMsg = `${context}\n\n관리자 메모:\n<memo>\n${text}\n</memo>`
+  let raw: string
+  if (ai.provider === 'openai') {
+    raw = await askOpenAI(ai.key, SYSTEM, userMsg)
+  } else {
+    raw = await askClaude(ai.key, userMsg)
+  }
+  const out = JSON.parse(raw) as { reply: string; question: string | null; actions: Action[] }
+  // 목록에 없는 학생 id 는 버림 (안전장치)
+  out.actions = out.actions
+    .map((a) => ({ ...a, student_ids: a.student_ids.filter((id) => ids.has(id)) }))
+    .filter((a) => a.type === 'note' || a.student_ids.length > 0)
+  return { ...out, ai: ai.provider, students: Object.fromEntries(ctx.students.map((s) => [s.id, s.name])) }
+}
+
+async function askClaude(key: string, userMsg: string): Promise<string> {
   const client = new Anthropic({ apiKey: key })
   const res = await client.beta.messages.create({
     model: 'claude-opus-5-5',
@@ -149,18 +198,13 @@ async function plan(text: string, org: string) {
     fallbacks: 'default',
     output_config: { effort: 'low', format: { type: 'json_schema', schema: SCHEMA } },
     system: SYSTEM,
-    messages: [{ role: 'user', content: `${context}\n\n관리자 메모:\n<memo>\n${text}\n</memo>` }]
+    messages: [{ role: 'user', content: userMsg }]
   } as Parameters<typeof client.beta.messages.create>[0])
 
-  if ((res as { stop_reason?: string }).stop_reason === 'refusal') return { error: 'refusal' }
+  if ((res as { stop_reason?: string }).stop_reason === 'refusal') throw new Error('refusal')
   const block = (res as { content: { type: string; text?: string }[] }).content.find((c) => c.type === 'text')
-  if (!block?.text) return { error: 'empty' }
-  const out = JSON.parse(block.text) as { reply: string; question: string | null; actions: Action[] }
-  // 목록에 없는 학생 id 는 버림 (안전장치)
-  out.actions = out.actions
-    .map((a) => ({ ...a, student_ids: a.student_ids.filter((id) => ids.has(id)) }))
-    .filter((a) => a.type === 'note' || a.student_ids.length > 0)
-  return { ...out, students: Object.fromEntries(ctx.students.map((s) => [s.id, s.name])) }
+  if (!block?.text) throw new Error('empty')
+  return block.text
 }
 
 /* ---------------- 2) 반영 ---------------- */
