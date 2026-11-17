@@ -539,6 +539,14 @@ function StopsSheet({ data, member, onClose, onSaved }: { data: ShuttleData; mem
             <PickMap key={editing?.id ?? 'new'} lat={lat} lng={lng} onPick={(a, b) => { setLat(a); setLng(b) }} />
             {err && <div className="error">{err}</div>}
             <div className="row"><button className="primary grow" onClick={save}>저장</button><button className="ghost" onClick={() => pick(null)}>취소</button></div>
+            {editing?.id && (used(editing.id) === 0 ? (
+              <button className="ghost danger" onClick={async () => {
+                if (!window.confirm(`"${editing.name}" 정류장을 삭제할까요?`)) return
+                const { error } = await supabase.from('stops').delete().eq('id', editing.id)
+                if (error) return setErr('삭제 실패: ' + errText(error))
+                await onSaved(); pick(null)
+              }}>🗑 정류장 삭제</button>
+            ) : <p className="muted tiny">운행 {used(editing.id)}곳에서 쓰는 정류장이라 삭제할 수 없어요. 먼저 차량표에서 빼 주세요.</p>)}
           </>
         ) : (
           <button onClick={() => pick(null, true)}>+ 정류장 추가</button>
@@ -549,6 +557,7 @@ function StopsSheet({ data, member, onClose, onSaved }: { data: ShuttleData; mem
             <li key={s.id} className="item-row" onClick={() => pick(s)}>
               <span className="grow"><b>{s.name}</b>{s.parent_name && <span className="small pname"> 👪 {s.parent_name}</span>} <span className="muted small">{s.address || '주소 없음'}</span>{s.lat == null && <span className="chip">지도 ✗</span>}</span>
               <span className="small muted">운행 {used(s.id)}</span>
+              <button className="small-btn" onClick={(e) => { e.stopPropagation(); pick(s) }}>✏️ 수정</button>
             </li>
           ))}
         </ul>
