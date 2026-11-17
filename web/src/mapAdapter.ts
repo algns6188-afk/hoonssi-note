@@ -32,7 +32,7 @@ function loadNaver(): Promise<boolean> {
     // 키가 안 맞거나 주소 미등록: 지도를 이미 만들었으면 OpenStreetMap 으로 다시 그리게 알림
     window.navermap_authFailure = () => { naverFailed = true; finish(false); fallbackSubs.forEach((f) => f()) }
     const sc = document.createElement('script')
-    sc.src = `https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=${NAVER_CLIENT_ID}`
+    sc.src = `https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=${NAVER_CLIENT_ID}&submodules=geocoder`
     sc.onload = () => finish(!!window.naver?.maps)
     sc.onerror = () => finish(false)
     document.head.appendChild(sc)
@@ -101,4 +101,29 @@ export async function createMap(el: HTMLElement, center: LL, zoom: number): Prom
   }
   el.innerHTML = ''
   return osmMap(el, center, zoom)
+}
+
+/** 주소 → 위치 (네이버 Geocoding). 못 찾으면 null, 네이버 주소검색을 못 쓰면 'unavailable' */
+export async function geocode(query: string): Promise<LL | null | 'unavailable'> {
+  if (!(await loadNaver()) || !window.naver?.maps?.Service) return 'unavailable'
+  const S = window.naver.maps.Service
+  return new Promise((ok) => {
+    const timer = window.setTimeout(() => ok('unavailable'), 8000)
+    try {
+      S.geocode({ query }, (status: unknown, res: any) => {
+        clearTimeout(timer)
+        if (status !== S.Status.OK) return ok('unavailable')
+        const a = res?.v2?.addresses?.[0]
+        ok(a ? [Number(a.y), Number(a.x)] : null)
+      })
+    } catch { clearTimeout(timer); ok('unavailable') }
+  })
+}
+
+/** "원초로9 안산8차푸르지오" → "경기도 안산시 단원구 원초로 9" 처럼 검색용 주소 만들기 */
+export function addressQuery(address: string, name: string): string | null {
+  const src = `${address} ${name}`
+  if (/경기|안산시/.test(address)) return address.trim()
+  const m = /([가-힣][가-힣0-9]*?(?:로|길)(?:[0-9]+(?:번|안)?길)?)\s?([0-9]+(?:-[0-9]+)?)/.exec(src)
+  return m ? `경기도 안산시 단원구 ${m[1]} ${m[2]}` : null
 }

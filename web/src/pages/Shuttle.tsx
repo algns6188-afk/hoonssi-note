@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase, errText, type Member, type Student } from '../supabase'
 import { DriverMode, PickMap, RequestSheet, RouteView, usePlace, useTrips } from './ShuttleLive'
+import { addressQuery, geocode } from '../mapAdapter'
 
 /* ---------------- 데이터 ---------------- */
 
@@ -414,6 +415,45 @@ function StopsSheet({ data, member, onClose, onSaved }: { data: ShuttleData; mem
   useEffect(() => {
     supabase.rpc('org_place').then(({ data: d }) => { const p = (d as { lat: number | null; lng: number | null }[] | null)?.[0]; if (p) setOrg(p) })
   }, [])
+  // 주소로 위치 자동 찾기
+  const [geo, setGeo] = useState<{ done: number; total: number; fails: { s: Stop; why: string }[]; msg?: string } | null>(null)
+  const [orgAddr, setOrgAddr] = useState('')
+  const near = (ll: [number, number]): boolean => Math.abs(ll[0] - 37.32) < 0.15 && Math.abs(ll[1] - 126.83) < 0.2 // 안산 근처만
+  const autoLocate = async (): Promise<void> => {
+    const todo = data.stops.filter((x) => x.lat == null)
+    const fails: { s: Stop; why: string }[] = []
+    setGeo({ done: 0, total: todo.length, fails })
+    let ok = 0
+    for (let i = 0; i < todo.length; i++) {
+      const st = todo[i]
+      const q = addressQuery(st.address, st.name)
+      if (!q) { fails.push({ s: st, why: '주소 없음' }) } else {
+        const r = await geocode(q)
+        if (r === 'unavailable') {
+          setGeo({ done: i, total: todo.length, fails, msg: '네이버 주소 검색을 쓸 수 없어요. 네이버 클라우드 → Maps → 강철노트 Application 에서 "Geocoding" 도 체크해 주세요.' })
+          await onSaved()
+          return
+        }
+        if (!r) fails.push({ s: st, why: '주소를 못 찾음' })
+        else if (!near(r)) fails.push({ s: st, why: '안산 밖으로 나옴' })
+        else {
+          const { error } = await supabase.from('stops').update({ lat: r[0], lng: r[1] }).eq('id', st.id)
+          if (error) fails.push({ s: st, why: errText(error) }); else ok++
+        }
+      }
+      setGeo({ done: i + 1, total: todo.length, fails: [...fails] })
+    }
+    setGeo({ done: todo.length, total: todo.length, fails, msg: `✅ ${ok}곳 위치를 찾았어요.${fails.length ? ` 못 찾은 ${fails.length}곳은 눌러서 지도에서 직접 찍어 주세요.` : ''}` })
+    await onSaved()
+  }
+  const orgByAddr = async (): Promise<void> => {
+    const q = addressQuery(orgAddr, '') ?? (orgAddr.trim() ? `경기도 안산시 단원구 ${orgAddr.trim()}` : '')
+    if (!q) return
+    const r = await geocode(q)
+    if (r === 'unavailable') return setErr('네이버 주소 검색을 쓸 수 없어요. 네이버 클라우드에서 "Geocoding" 을 체크해 주세요.')
+    if (!r) return setErr('주소를 못 찾았어요. 지도에서 직접 찍어 주세요.')
+    await saveOrg(r[0], r[1])
+  }
   const saveOrg = async (la: number, ln: number): Promise<void> => {
     setOrg({ lat: la, lng: ln })
     const { error } = await supabase.from('orgs').update({ lat: la, lng: ln }).eq('id', member.org_id)
@@ -431,6 +471,7 @@ function StopsSheet({ data, member, onClose, onSaved }: { data: ShuttleData; mem
     setWait(s?.wait_note ?? '')
     setLat(s?.lat ?? null)
     setLng(s?.lng ?? null)
+    if (open) window.setTimeout(() => document.querySelector('.sheet')?.scrollTo({ top: 0, behavior: 'smooth' }), 50)
     setErr(null)
   }
   const save = async (): Promise<void> => {
@@ -448,14 +489,40 @@ function StopsSheet({ data, member, onClose, onSaved }: { data: ShuttleData; mem
     <Sheet title="📍 정류장" onClose={onClose}>
       <div className="form">
         <button className="ghost" onClick={() => setPlaceOpen(!placeOpen)}>🥋 도장 위치 {org.lat != null ? '✓' : '(지정 안 됨)'} {placeOpen ? '▲' : '▼'}</button>
-        {placeOpen && <PickMap lat={org.lat} lng={org.lng} onPick={saveOrg} />}
+        {placeOpen && (
+          <>
+            <div className="row">
+              <input className="grow" placeholder="도장 주소 (예: 원곡로 45)" value={orgAddr} onChange={(e) => setOrgAddr(e.target.value)} />
+              <button className="small-btn" onClick={orgByAddr}>주소로 찾기</button>
+            </div>
+            <PickMap key={`${org.lat}`} lat={org.lat} lng={org.lng} onPick={saveOrg} />
+          </>
+        )}
+        {(() => {
+          const missing = data.stops.filter((x) => x.lat == null).length
+          return (
+            <div className="geo-box">
+              <div className="small"><b>📍 지도 위치</b> {data.stops.length - missing}/{data.stops.length}곳 지정됨</div>
+              {missing > 0 && !geo && <button className="primary" onClick={autoLocate}>주소로 위치 자동 찾기 ({missing}곳)</button>}
+              {geo && geo.done < geo.total && !geo.msg && <div className="small">찾는 중… {geo.done}/{geo.total}</div>}
+              {geo?.msg && <div className={geo.msg.startsWith('✅') ? 'notice-ok small' : 'error'}>{geo.msg}</div>}
+              {geo && geo.fails.length > 0 && (
+                <ul className="plain geo-fails">
+                  {geo.fails.map(({ s: st, why }) => (
+                    <li key={st.id} onClick={() => pick(st)}><b>{st.name}</b> <span className="muted small">{st.address || ''} · {why}</span> <span className="small">→ 지도에서 찍기</span></li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )
+        })()}
         {formOpen ? (
           <>
             <label>이름<input value={name} onChange={(e) => setName(e.target.value)} /></label>
             <label>주소<input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="원선로47" /></label>
             <label>대기 위치<input value={wait} onChange={(e) => setWait(e.target.value)} placeholder="예: 정문 앞 편의점 쪽" /></label>
             <div className="small"><b>지도 위치</b> {lat != null ? <span className="ok">✓ 지정됨</span> : <span className="muted">없음 (학부모 지도·자동 "지남" 표시에 필요)</span>}</div>
-            <PickMap lat={lat} lng={lng} onPick={(a, b) => { setLat(a); setLng(b) }} />
+            <PickMap key={editing?.id ?? 'new'} lat={lat} lng={lng} onPick={(a, b) => { setLat(a); setLng(b) }} />
             {err && <div className="error">{err}</div>}
             <div className="row"><button className="primary grow" onClick={save}>저장</button><button className="ghost" onClick={() => pick(null)}>취소</button></div>
           </>
