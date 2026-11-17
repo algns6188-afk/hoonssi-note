@@ -587,3 +587,4 @@ a.btn.call { background: var(--in-soft); padding: 8px 10px; }
 .rv-legend i { display: inline-block; width: 18px; height: 4px; border-radius: 2px; vertical-align: middle; margin-right: 4px; }
 .lg-route { background: #9bbf95; } .lg-passed { background: #1f5b45; }
 .lg-mine { width: 10px !important; height: 10px !important; border-radius: 50% !important; background: #f0b429; }
+.pname { color: #9a6200; }

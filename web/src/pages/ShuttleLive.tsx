@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createMap, onMapFallback, roadPath, type LL, type MapAdapter, type MarkerH } from '../mapAdapter'
 import { supabase, errText } from '../supabase'
 import { useI18n } from '../i18n'
-import { activeRide, describeRequest, type RideView, hm, loadShuttle, ridersView, stopsOn, type RideRequest, type Run, type RunStop, type ShuttleData, type Stop } from './Shuttle'
+import { activeRide, describeRequest, stopLabel, type RideView, hm, loadShuttle, ridersView, stopsOn, type RideRequest, type Run, type RunStop, type ShuttleData, type Stop } from './Shuttle'
 
 /* 강철셔틀 실시간: 노선도 · 지도 경로 · 기사님 운행 모드 */
 
@@ -121,7 +121,7 @@ export function RouteView({ data, run, day, trip, place, names, mineOnly, onEdit
                 onClick={onEditStop ? () => onEditStop(rs) : undefined}>
                 <span className="rv-dot">{passedAt ? '✓' : String(i + 1).padStart(2, '0')}</span>
                 <div className="grow">
-                  <b>{st?.name ?? '?'}</b>
+                  <b>{stopLabel(st, mineOnly) || '?'}</b>
                   {st?.wait_note && <div className="muted tiny">{st.wait_note}</div>}
                   {kids.length > 0 && (
                     <div className="riders">
@@ -130,7 +130,7 @@ export function RouteView({ data, run, day, trip, place, names, mineOnly, onEdit
                           {v.action === 'board' ? '⬆' : '⬇'} {(v.action === 'board' ? t.shBoard : t.shAlight).replace('{name}', n!)}
                           {v.tag === 'skip' && <em>{t.rqTagSkip}</em>}
                           {v.tag === 'add' && <em>{t.rqTagAdd}</em>}
-                          {v.tag === 'moved' && <em>{v.to ? `→ ${v.to}` : t.rqTagStopped}</em>}
+                          {v.tag === 'moved' && <em>{v.to ? `→ ${mineOnly && v.toRs ? (() => { const r = data.runStops.find((x) => x.id === v.toRs); return r ? `${hm(r.at_time)} ${stopLabel(stopOf(r.stop_id), true)}` : v.to })() : v.to}` : t.rqTagStopped}</em>}
                           {v.tag === 'new' && <em>{t.rqTagNew}</em>}
                           {onEditStop && v.note && v.tag && <small> · {v.note}</small>}
                           {onUndo && (v.tag === 'skip' || v.tag === 'add') && (
@@ -159,7 +159,7 @@ export function RouteView({ data, run, day, trip, place, names, mineOnly, onEdit
           )}
         </ol>
       ) : (
-        <RouteMap data={data} run={run} list={list} trip={trip} place={place} mineIds={!mineOnly ? new Set() : new Set(list.filter((rs) => ridersView(data, rs, run, day, date).some((v) => activeRide(v) && names(v.student_id))).map((rs) => rs.id))} />
+        <RouteMap data={data} run={run} list={list} trip={trip} place={place} parent={!!mineOnly} mineIds={!mineOnly ? new Set() : new Set(list.filter((rs) => ridersView(data, rs, run, day, date).some((v) => activeRide(v) && names(v.student_id))).map((rs) => rs.id))} />
       )}
     </div>
   )
@@ -182,8 +182,8 @@ function useMapAdapter(box: React.RefObject<HTMLDivElement>, center: LL, zoom: n
   return m
 }
 
-function RouteMap({ data, run, list, trip, place, mineIds }: {
-  data: ShuttleData; run: Run; list: RunStop[]; trip?: Trip; place: Place | null; mineIds: Set<string>
+function RouteMap({ data, run, list, trip, place, mineIds, parent }: {
+  data: ShuttleData; run: Run; list: RunStop[]; trip?: Trip; place: Place | null; mineIds: Set<string>; parent?: boolean
 }): JSX.Element {
   const { t } = useI18n()
   const box = useRef<HTMLDivElement>(null)
@@ -196,11 +196,11 @@ function RouteMap({ data, run, list, trip, place, mineIds }: {
     if (dojang && run.kind !== 'to') out.push(dojang)
     list.forEach((rs, i) => {
       const s = data.stops.find((x) => x.id === rs.stop_id)
-      if (s?.lat != null && s.lng != null) out.push({ ll: [s.lat, s.lng], label: String(i + 1), id: rs.id, name: s.name })
+      if (s?.lat != null && s.lng != null) out.push({ ll: [s.lat, s.lng], label: String(i + 1), id: rs.id, name: stopLabel(s, parent) })
     })
     if (dojang && run.kind !== 'from') out.push({ ...dojang, id: 'dojang-end' })
     return out
-  }, [data, run, list, place])
+  }, [data, run, list, place, parent])
   const ptsKey = pts.map((p) => p.ll.join(',')).join(';')
 
   // 도로 경로 (안 되면 직선)
@@ -488,7 +488,7 @@ export function ParentShuttle({ kids }: { kids: { id: string; name: string }[] }
 
 function ReqLine({ data, q, name, onCancel }: { data: ShuttleData; q: RideRequest; name: string; onCancel(): void }): JSX.Element {
   const { t } = useI18n()
-  const d = describeRequest(data, q)
+  const d = describeRequest(data, q, true)
   const kind = q.kind === 'skip' ? t.rqSkip : q.kind === 'add' ? t.rqAdd : t.rqChange
   const when = q.scope === 'once' ? (q.date ?? '').slice(5).replace('-', '/') : t.rqAlways
   const st = { pending: t.rqPending, approved: t.rqApproved, rejected: t.rqRejected, canceled: '' }[q.status]
@@ -534,7 +534,7 @@ export function RequestSheet({ data, kids, onClose, onDone, admin, initial, orgI
   const rsLabel = (rsId: string): string => {
     const rs = data.runStops.find((x) => x.id === rsId)
     const run = rs && data.runs.find((r) => r.id === rs.run_id)
-    return rs ? `${run?.name ?? ''} · ${hm(rs.at_time)} ${data.stops.find((s) => s.id === rs.stop_id)?.name ?? ''}` : ''
+    return rs ? `${run?.name ?? ''} · ${hm(rs.at_time)} ${stopLabel(data.stops.find((s) => s.id === rs.stop_id), !admin)}` : ''
   }
   // 지금 타는 곳 (그날 / 계속이면 전체)
   const current = data.rides
@@ -693,7 +693,7 @@ export function RequestSheet({ data, kids, onClose, onDone, admin, initial, orgI
                 <label>{t.rqTo}
                   <select value={to} onChange={(e) => setTo(e.target.value)}>
                     <option value="">{t.rqPick}</option>
-                    {targetStops.map((rs) => <option key={rs.id} value={rs.id}>{hm(rs.at_time)} {data.stops.find((s) => s.id === rs.stop_id)?.name}</option>)}
+                    {targetStops.map((rs) => <option key={rs.id} value={rs.id}>{hm(rs.at_time)} {stopLabel(data.stops.find((s) => s.id === rs.stop_id), !admin)}</option>)}
                   </select>
                 </label>
               )}

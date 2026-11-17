@@ -6,7 +6,9 @@ import { addressQuery, geocode } from '../mapAdapter'
 /* ---------------- 데이터 ---------------- */
 
 export interface Vehicle { id: string; name: string; plate: string; capacity: number; active: boolean }
-export interface Stop { id: string; name: string; address: string; wait_note: string; lat: number | null; lng: number | null; active: boolean }
+export interface Stop { id: string; name: string; parent_name?: string | null; address: string; wait_note: string; lat: number | null; lng: number | null; active: boolean }
+/** 정류장 이름: 학부모 화면이면 학부모용 이름(없으면 관리자 이름과 같음) */
+export const stopLabel = (s: Stop | undefined, parent?: boolean): string => (s ? (parent && s.parent_name ? s.parent_name : s.name) : '')
 export interface Run {
   id: string; vehicle_id: string | null; name: string; session_no: number | null; kind: 'to' | 'from' | 'mixed'
   class_start: string | null; weekdays: string; cutoff_minutes: number; sort: number; active: boolean
@@ -32,7 +34,7 @@ export function nextDateOf(d: string): string {
 export const dayOfDate = (date: string): string => '일월화수목금토'[new Date(date + 'T00:00:00Z').getUTCDay()]
 
 /** 정류장 탑승 명단 + 바뀐 것 표시: skip(그날 안 탐) · add(그날 추가) · moved(다른 곳으로 옮김/중단, 최근 7일) · new(새로 옮겨옴, 최근 7일) */
-export interface RideView { key: string; student_id: string; action: 'board' | 'alight'; tag: '' | 'skip' | 'add' | 'moved' | 'new'; note: string; ride?: Ride; to?: string }
+export interface RideView { key: string; student_id: string; action: 'board' | 'alight'; tag: '' | 'skip' | 'add' | 'moved' | 'new'; note: string; ride?: Ride; to?: string; toRs?: string }
 export function ridersView(data: ShuttleData, rs: RunStop, run: Run, d: string, date: string): RideView[] {
   const recent = (q: RideRequest): boolean => q.status === 'approved' && q.scope === 'always' && !!q.decided_at && Date.now() - Date.parse(q.decided_at) < 7 * 86400_000
   const ex = data.exceptions.filter((e) => e.date === date && e.run_stop_id === rs.id)
@@ -47,7 +49,7 @@ export function ridersView(data: ShuttleData, rs: RunStop, run: Run, d: string, 
   for (const q of data.requests.filter((q) => recent(q) && q.from_run_stop_id === rs.id && q.kind !== 'add')) {
     if (out.some((o) => o.student_id === q.student_id)) continue
     const to = q.to_run_stop_id ? data.runStops.find((x) => x.id === q.to_run_stop_id) : undefined
-    out.push({ key: 'm' + q.id, student_id: q.student_id, action: q.action, tag: 'moved', note: q.reason, to: to ? `${hm(to.at_time)} ${data.stops.find((s) => s.id === to.stop_id)?.name ?? ''}` : '' })
+    out.push({ key: 'm' + q.id, student_id: q.student_id, action: q.action, tag: 'moved', note: q.reason, toRs: to?.id, to: to ? `${hm(to.at_time)} ${data.stops.find((s) => s.id === to.stop_id)?.name ?? ''}` : '' })
   }
   return out
 }
@@ -408,6 +410,8 @@ function StopsSheet({ data, member, onClose, onSaved }: { data: ShuttleData; mem
   const [name, setName] = useState('')
   const [address, setAddress] = useState('')
   const [wait, setWait] = useState('')
+  const [pname, setPname] = useState('')
+  const [same, setSame] = useState(true)
   const [lat, setLat] = useState<number | null>(null)
   const [lng, setLng] = useState<number | null>(null)
   const [placeOpen, setPlaceOpen] = useState(false)
@@ -469,6 +473,8 @@ function StopsSheet({ data, member, onClose, onSaved }: { data: ShuttleData; mem
     setName(s?.name ?? '')
     setAddress(s?.address ?? '')
     setWait(s?.wait_note ?? '')
+    setPname(s?.parent_name ?? '')
+    setSame(!s?.parent_name)
     setLat(s?.lat ?? null)
     setLng(s?.lng ?? null)
     if (open) window.setTimeout(() => document.querySelector('.sheet')?.scrollTo({ top: 0, behavior: 'smooth' }), 50)
@@ -476,11 +482,13 @@ function StopsSheet({ data, member, onClose, onSaved }: { data: ShuttleData; mem
   }
   const save = async (): Promise<void> => {
     if (!name.trim()) return setErr('정류장 이름을 적어 주세요.')
-    const row = { name: name.trim(), address: address.trim(), wait_note: wait.trim(), lat, lng }
+    if (!same && !pname.trim()) return setErr('학부모에게 보일 이름을 적거나 "관리자 이름과 같음"을 체크해 주세요.')
+    const row = { name: name.trim(), parent_name: same ? null : pname.trim(), address: address.trim(), wait_note: wait.trim(), lat, lng }
     const r = editing?.id
       ? await supabase.from('stops').update(row).eq('id', editing.id)
       : await supabase.from('stops').insert({ ...row, org_id: member.org_id })
-    if (r.error) return setErr(/duplicate|unique/i.test(r.error.message) ? '같은 이름의 정류장이 있어요.' : errText(r.error))
+    if (r.error) return setErr(/duplicate|unique/i.test(r.error.message) ? '같은 이름의 정류장이 있어요.'
+      : /parent_name/.test(r.error.message) ? '학부모용 이름은 Supabase에서 schema-v15-stop-parent-name.sql 을 실행한 뒤 쓸 수 있어요.' : errText(r.error))
     await onSaved()
     pick(null)
   }
@@ -518,7 +526,13 @@ function StopsSheet({ data, member, onClose, onSaved }: { data: ShuttleData; mem
         })()}
         {formOpen ? (
           <>
-            <label>이름<input value={name} onChange={(e) => setName(e.target.value)} /></label>
+            <label>관리자용 이름 <span className="muted small">(차량표·기사님 화면)</span><input value={name} onChange={(e) => setName(e.target.value)} /></label>
+            <label className="check"><input type="checkbox" checked={same} onChange={(e) => setSame(e.target.checked)} /><span>학부모에게도 같은 이름으로 보이기</span></label>
+            {!same && (
+              <label>학부모용 이름 <span className="muted small">(학부모 앱 노선도·지도·신청 화면)</span>
+                <input value={pname} onChange={(e) => setPname(e.target.value)} placeholder="예: 원곡초 정문 앞 큰길" />
+              </label>
+            )}
             <label>주소<input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="원선로47" /></label>
             <label>대기 위치<input value={wait} onChange={(e) => setWait(e.target.value)} placeholder="예: 정문 앞 편의점 쪽" /></label>
             <div className="small"><b>지도 위치</b> {lat != null ? <span className="ok">✓ 지정됨</span> : <span className="muted">없음 (학부모 지도·자동 "지남" 표시에 필요)</span>}</div>
@@ -533,7 +547,7 @@ function StopsSheet({ data, member, onClose, onSaved }: { data: ShuttleData; mem
         <ul className="plain">
           {list.map((s) => (
             <li key={s.id} className="item-row" onClick={() => pick(s)}>
-              <span className="grow"><b>{s.name}</b> <span className="muted small">{s.address || '주소 없음'}</span>{s.lat == null && <span className="chip">지도 ✗</span>}</span>
+              <span className="grow"><b>{s.name}</b>{s.parent_name && <span className="small pname"> 👪 {s.parent_name}</span>} <span className="muted small">{s.address || '주소 없음'}</span>{s.lat == null && <span className="chip">지도 ✗</span>}</span>
               <span className="small muted">운행 {used(s.id)}</span>
             </li>
           ))}
@@ -615,12 +629,12 @@ export function StudentRides({ studentId }: { studentId: string }): JSX.Element 
 
 /* ---------------- 학부모 차량 변경 신청 → 승인/거절 ---------------- */
 
-export function describeRequest(data: ShuttleData, q: RideRequest): { what: string; when: string; from: string; to: string } {
+export function describeRequest(data: ShuttleData, q: RideRequest, parent = false): { what: string; when: string; from: string; to: string } {
   const label = (id: string | null): string => {
     const rs = id ? data.runStops.find((x) => x.id === id) : undefined
     if (!rs) return ''
     const run = data.runs.find((r) => r.id === rs.run_id)
-    return `${run?.name ?? ''} ${hm(rs.at_time)} ${data.stops.find((s) => s.id === rs.stop_id)?.name ?? ''}`
+    return `${run?.name ?? ''} ${hm(rs.at_time)} ${stopLabel(data.stops.find((s) => s.id === rs.stop_id), parent)}`
   }
   return {
     what: q.kind === 'skip' ? '🚫 안 탐' : q.kind === 'add' ? '✅ 탑승' : '🔄 장소 변경',
