@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import L from 'leaflet'
-import 'leaflet/dist/leaflet.css'
+import { createMap, onMapFallback, type LL, type LineH, type MapAdapter, type MarkerH } from '../mapAdapter'
 import { supabase, errText } from '../supabase'
 import { useI18n } from '../i18n'
 import { activeRide, describeRequest, type RideView, hm, loadShuttle, ridersView, stopsOn, type RideRequest, type Run, type RunStop, type ShuttleData, type Stop } from './Shuttle'
@@ -155,23 +154,36 @@ export function RouteView({ data, run, day, trip, place, names, mineOnly, onEdit
   )
 }
 
-const numIcon = (n: number | string, cls: string): L.DivIcon =>
-  L.divIcon({ className: '', html: `<div class="map-pin ${cls}">${n}</div>`, iconSize: [26, 26], iconAnchor: [13, 13] })
+const pinHtml = (n: number | string, cls: string): string => `<div class="map-pin ${cls}">${n}</div>`
+
+/** 지도 하나 만들고(네이버 → 안 되면 OSM), 네이버 인증이 늦게 실패하면 다시 만듦 */
+function useMapAdapter(box: React.RefObject<HTMLDivElement>, center: LL, zoom: number): MapAdapter | null {
+  const [m, setM] = useState<MapAdapter | null>(null)
+  const [ver, setVer] = useState(0)
+  useEffect(() => onMapFallback(() => setVer((v) => v + 1)), [])
+  useEffect(() => {
+    if (!box.current) return
+    let alive = true
+    let made: MapAdapter | null = null
+    createMap(box.current, center, zoom).then((a) => { if (alive) { made = a; setM(a) } else a.destroy() })
+    return () => { alive = false; made?.destroy(); setM(null); if (box.current) box.current.innerHTML = '' }
+  }, [ver]) // eslint-disable-line react-hooks/exhaustive-deps
+  return m
+}
 
 function RouteMap({ data, run, list, trip, place, mineIds }: {
   data: ShuttleData; run: Run; list: RunStop[]; trip?: Trip; place: Place | null; mineIds: Set<string>
 }): JSX.Element {
   const { t } = useI18n()
   const box = useRef<HTMLDivElement>(null)
-  const map = useRef<L.Map | null>(null)
-  const layer = useRef<L.LayerGroup | null>(null)
-  const bus = useRef<L.Marker | null>(null)
-  const trail = useRef<L.Polyline | null>(null)
-  const [trailPts, setTrailPts] = useState<[number, number][]>([])
+  const map = useMapAdapter(box, [37.32, 126.83], 14)
+  const bus = useRef<MarkerH | null>(null)
+  const trail = useRef<LineH | null>(null)
+  const [trailPts, setTrailPts] = useState<LL[]>([])
 
   const pts = useMemo(() => {
-    const out: { ll: [number, number]; label: string; id: string; name: string }[] = []
-    const dojang = place?.lat != null && place.lng != null ? { ll: [place.lat, place.lng] as [number, number], label: '🥋', id: 'dojang', name: place.name } : null
+    const out: { ll: LL; label: string; id: string; name: string }[] = []
+    const dojang = place?.lat != null && place.lng != null ? { ll: [place.lat, place.lng] as LL, label: '🥋', id: 'dojang', name: place.name } : null
     if (dojang && run.kind !== 'to') out.push(dojang)
     list.forEach((rs, i) => {
       const s = data.stops.find((x) => x.id === rs.stop_id)
@@ -191,47 +203,42 @@ function RouteMap({ data, run, list, trip, place, mineIds }: {
     if (trip?.lat != null && trip.lng != null) setTrailPts((p) => [...p, [trip.lat!, trip.lng!]])
   }, [trip?.lat, trip?.lng])
 
-  useEffect(() => {
-    if (!box.current || map.current) return
-    map.current = L.map(box.current, { zoomControl: true, attributionControl: true }).setView([37.32, 126.83], 14)
-    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(map.current)
-    layer.current = L.layerGroup().addTo(map.current)
-    return () => { map.current?.remove(); map.current = null }
-  }, [])
-
   const fitAll = useCallback(() => {
-    const all: [number, number][] = pts.map((p) => p.ll)
+    const all: LL[] = pts.map((p) => p.ll)
     if (trip?.lat != null && trip.lng != null) all.push([trip.lat, trip.lng])
-    if (all.length) map.current?.fitBounds(L.latLngBounds(all), { padding: [30, 30], maxZoom: 16 })
-  }, [pts, trip?.lat, trip?.lng])
+    map?.fit(all)
+  }, [map, pts, trip?.lat, trip?.lng])
 
+  // 정류장·예정 경로
   useEffect(() => {
-    const g = layer.current
-    if (!g) return
-    g.clearLayers()
-    if (pts.length > 1) L.polyline(pts.map((p) => p.ll), { color: '#9bbf95', weight: 5, dashArray: '8 8' }).addTo(g)
+    if (!map) return
+    const made: { remove(): void }[] = []
+    if (pts.length > 1) made.push(map.polyline(pts.map((p) => p.ll), { color: '#9bbf95', weight: 5, dashed: true }))
     for (const p of pts) {
       const passed = !!trip?.passed[p.id]
-      L.marker(p.ll, { icon: numIcon(p.label, `${passed ? 'passed' : ''} ${mineIds.has(p.id) ? 'mine' : ''} ${p.id.startsWith('dojang') ? 'dojang' : ''}`) })
-        .bindTooltip(p.name).addTo(g)
+      made.push(map.marker(p.ll, pinHtml(p.label, `${passed ? 'passed' : ''} ${mineIds.has(p.id) ? 'mine' : ''} ${p.id.startsWith('dojang') ? 'dojang' : ''}`), 26, p.name))
     }
     fitAll()
-  }, [pts, mineIds]) // eslint-disable-line react-hooks/exhaustive-deps
+    return () => made.forEach((x) => x.remove())
+  }, [map, pts, mineIds, JSON.stringify(trip?.passed ?? {})]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // 지나온 길
   useEffect(() => {
-    if (!map.current) return
-    if (trail.current) trail.current.setLatLngs(trailPts)
-    else trail.current = L.polyline(trailPts, { color: '#1f5b45', weight: 6 }).addTo(map.current)
-  }, [trailPts])
+    if (!map) return
+    if (trail.current) trail.current.setPath(trailPts)
+    else if (trailPts.length > 1) trail.current = map.polyline(trailPts, { color: '#1f5b45', weight: 6 })
+  }, [map, trailPts])
+  useEffect(() => () => { trail.current = null; bus.current = null }, [map])
 
+  // 차량 위치
   useEffect(() => {
-    if (!map.current) return
+    if (!map) return
     if (trip?.lat != null && trip.lng != null && !trip.ended_at) {
-      const ll: [number, number] = [trip.lat, trip.lng]
-      if (bus.current) bus.current.setLatLng(ll)
-      else bus.current = L.marker(ll, { icon: L.divIcon({ className: '', html: '<div class="map-bus">🚐</div>', iconSize: [36, 36], iconAnchor: [18, 18] }), zIndexOffset: 1000 }).addTo(map.current)
+      const ll: LL = [trip.lat, trip.lng]
+      if (bus.current) bus.current.setPos(ll)
+      else bus.current = map.marker(ll, '<div class="map-bus">🚐</div>', 36, '', 1000)
     } else if (bus.current) { bus.current.remove(); bus.current = null }
-  }, [trip?.lat, trip?.lng, trip?.ended_at])
+  }, [map, trip?.lat, trip?.lng, trip?.ended_at])
 
   const noCoords = pts.filter((p) => !p.id.startsWith('dojang')).length === 0
   return (
@@ -239,7 +246,7 @@ function RouteMap({ data, run, list, trip, place, mineIds }: {
       <div ref={box} className="rv-map" />
       <div className="rv-map-btns">
         <button onClick={fitAll}>{t.shFitAll}</button>
-        {trip?.lat != null && <button onClick={() => map.current?.setView([trip.lat!, trip.lng!], 16)}>🚐 {t.shBusPos}</button>}
+        {trip?.lat != null && <button onClick={() => map?.setView([trip.lat!, trip.lng!], 16)}>🚐 {t.shBusPos}</button>}
       </div>
       {noCoords && <p className="muted small center">{t.shNoCoords}</p>}
     </div>
@@ -371,26 +378,23 @@ export function DriverMode({ data, run, day, place, orgId, onExit }: { data: Shu
 
 export function PickMap({ lat, lng, onPick }: { lat: number | null; lng: number | null; onPick(lat: number, lng: number): void }): JSX.Element {
   const box = useRef<HTMLDivElement>(null)
-  const map = useRef<L.Map | null>(null)
-  const pin = useRef<L.Marker | null>(null)
+  const map = useMapAdapter(box, lat != null && lng != null ? [lat, lng] : [37.318, 126.835], lat != null ? 17 : 14)
+  const pin = useRef<MarkerH | null>(null)
   const cb = useRef(onPick)
   cb.current = onPick
   useEffect(() => {
-    if (!box.current) return
-    const m = L.map(box.current).setView(lat != null && lng != null ? [lat, lng] : [37.318, 126.835], lat != null ? 17 : 14)
-    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(m)
-    m.on('click', (e: L.LeafletMouseEvent) => cb.current(e.latlng.lat, e.latlng.lng))
-    map.current = m
-    return () => { m.remove(); map.current = null; pin.current = null }
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+    if (!map) return
+    map.onClick((a, b) => cb.current(a, b))
+    return () => { pin.current = null }
+  }, [map])
   useEffect(() => {
-    if (!map.current) return
+    if (!map) return
     if (lat == null || lng == null) { pin.current?.remove(); pin.current = null; return }
-    if (pin.current) pin.current.setLatLng([lat, lng])
-    else pin.current = L.marker([lat, lng], { icon: numIcon('📍', 'pick') }).addTo(map.current)
-  }, [lat, lng])
+    if (pin.current) pin.current.setPos([lat, lng])
+    else pin.current = map.marker([lat, lng], pinHtml('📍', 'pick'), 26, '', 500)
+  }, [map, lat, lng])
   const here = (): void => navigator.geolocation?.getCurrentPosition(
-    (p) => { cb.current(p.coords.latitude, p.coords.longitude); map.current?.setView([p.coords.latitude, p.coords.longitude], 17) },
+    (p) => { cb.current(p.coords.latitude, p.coords.longitude); map?.setView([p.coords.latitude, p.coords.longitude], 17) },
     () => alert('현재 위치를 가져오지 못했어요. 위치 권한을 확인해 주세요.'),
     { enableHighAccuracy: true, timeout: 15000 }
   )
