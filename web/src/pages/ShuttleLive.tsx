@@ -455,6 +455,10 @@ export function ParentShuttle({ kids }: { kids: { id: string; name: string }[] }
         <h3 className="grow">🚐 {t.shTitle}</h3>
         {data.requestsOk && <button className="small-btn" onClick={() => setAsking(true)}>✏️ {t.rqButton}</button>}
       </div>
+      <details className="sh-notice">
+        <summary>{t.shNoticeTitle}</summary>
+        {t.shNotice.split('\n').map((line, i) => <p key={i}>{line}</p>)}
+      </details>
       {runs.length === 0 ? <p className="muted small">{t.rqNoRideToday}</p> : <p className="muted tiny">🔒 {t.shPrivacy}</p>}
       {runs.map(({ run, list }) => {
         const trip = trips.find((x) => x.run_id === run.id)
@@ -683,6 +687,7 @@ export function RequestSheet({ data, kids, onClose, onDone, admin, initial, orgI
           )}
           {kind !== 'skip' && (kind === 'add' || from) && (
             <>
+              {!admin && <p className="sh-stop-note">ℹ️ {t.rqStopNote}</p>}
               <label>{t.rqRun}
                 <select value={targetRun} onChange={(e) => { setRunId(e.target.value); setTo('') }}>
                   <option value="">{t.rqPick}</option>

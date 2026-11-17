@@ -588,3 +588,7 @@ a.btn.call { background: var(--in-soft); padding: 8px 10px; }
 .lg-route { background: #9bbf95; } .lg-passed { background: #1f5b45; }
 .lg-mine { width: 10px !important; height: 10px !important; border-radius: 50% !important; background: #f0b429; }
 .pname { color: #9a6200; }
+.sh-notice { background: #f4f8f2; border: 1px solid #d8e6d3; border-radius: 12px; padding: 10px 12px; margin: 6px 0 8px; }
+.sh-notice summary { font-weight: 700; cursor: pointer; color: #1f5b45; }
+.sh-notice p { margin: 8px 0 0; font-size: 14px; line-height: 1.6; word-break: keep-all; }
+.sh-stop-note { font-size: 13px; background: #f4f8f2; border-radius: 10px; padding: 8px 10px; margin: 0; color: #1f5b45; word-break: keep-all; }
