@@ -321,6 +321,25 @@ function RunStopSheet({ data, run, rs, students, member, onClose, onSaved }: {
   const nameOf = (id: string): string => students.find((s) => s.id === id)?.name ?? '?'
   const cands = add.trim() ? students.filter((s) => s.active && s.name.includes(add.trim()) && !rides.some((r) => r.student_id === s.id)).slice(0, 6) : []
   const defaultAction: Ride['action'] = run.kind === 'to' ? 'board' : 'alight'
+  // 정류장 정보 수정 (이름·학부모용 이름·주소·대기 위치·지도 위치) / 다른 정류장으로 바꾸기
+  const [stopId, setStopId] = useState(rs.stop_id)
+  const [stopEdit, setStopEdit] = useState(false)
+  const [sf, setSf] = useState({ name: stop?.name ?? '', same: !stop?.parent_name, pname: stop?.parent_name ?? '', address: stop?.address ?? '', wait: stop?.wait_note ?? '', lat: stop?.lat ?? null as number | null, lng: stop?.lng ?? null as number | null })
+  const [stopMsg, setStopMsg] = useState<string | null>(null)
+  const saveStop = async (): Promise<void> => {
+    if (!stop || !sf.name.trim()) return setStopMsg('정류장 이름을 적어 주세요.')
+    if (!sf.same && !sf.pname.trim()) return setStopMsg('학부모용 이름을 적거나 "같은 이름"을 체크해 주세요.')
+    const { error } = await supabase.from('stops').update({
+      name: sf.name.trim(), parent_name: sf.same ? null : sf.pname.trim(), address: sf.address.trim(), wait_note: sf.wait.trim(), lat: sf.lat, lng: sf.lng
+    }).eq('id', stop.id)
+    if (error) return setStopMsg(/parent_name/.test(error.message) ? '학부모용 이름은 SQL v15 실행 후 쓸 수 있어요.' : /duplicate|unique/i.test(error.message) ? '같은 이름의 정류장이 있어요.' : '저장 실패: ' + errText(error))
+    if (sf.name.trim() !== stop.name) {
+      await supabase.from('timeline').insert({ org_id: member.org_id, kind: 'shuttle', summary: `📍 정류장 이름 변경: ${stop.name} → ${sf.name.trim()} — ${member.display_name}` })
+    }
+    setStopMsg('✅ 정류장 정보를 저장했어요. (이 정류장을 쓰는 모든 운행에 반영)')
+    setStopEdit(false)
+    await onSaved()
+  }
 
   const save = async (): Promise<void> => {
     if (!reason.trim()) return setErr('다른 선생님이 알 수 있게 수정 사유를 적어 주세요.')
@@ -328,9 +347,10 @@ function RunStopSheet({ data, run, rs, students, member, onClose, onSaved }: {
     setErr(null)
     const changes: string[] = []
     try {
-      if (time !== hm(rs.at_time) || (days || null) !== rs.weekdays) {
-        const r = await supabase.from('run_stops').update({ at_time: time, weekdays: days || null }).eq('id', rs.id)
+      if (time !== hm(rs.at_time) || (days || null) !== rs.weekdays || stopId !== rs.stop_id) {
+        const r = await supabase.from('run_stops').update({ at_time: time, weekdays: days || null, stop_id: stopId }).eq('id', rs.id)
         if (r.error) throw r.error
+        if (stopId !== rs.stop_id) changes.push(`정류장 ${stop?.name} → ${data.stops.find((x) => x.id === stopId)?.name}`)
         if (time !== hm(rs.at_time)) changes.push(`시간 ${hm(rs.at_time)} → ${time}`)
         if ((days || null) !== rs.weekdays) changes.push(`요일 ${rs.weekdays ?? '매일'} → ${days || '매일'}`)
       }
@@ -367,7 +387,33 @@ function RunStopSheet({ data, run, rs, students, member, onClose, onSaved }: {
   return (
     <Sheet title={`${run.name} · ${stop?.name ?? ''}`} onClose={onClose}>
       <div className="form">
-        {stop?.address && <p className="muted small">📍 {stop.address}{stop.wait_note ? ` · ${stop.wait_note}` : ''}</p>}
+        <div className="rs-stop-box">
+          <div className="row">
+            <div className="grow">
+              <b>📍 {stop?.name}</b>{stop?.parent_name && <span className="small pname"> 👪 {stop.parent_name}</span>}
+              <div className="muted small">{stop?.address || '주소 없음'}{stop?.wait_note ? ` · ${stop.wait_note}` : ''}{stop?.lat == null ? ' · 지도 위치 없음' : ''}</div>
+            </div>
+            <button className="small-btn" onClick={() => { setStopEdit(!stopEdit); setStopMsg(null) }}>{stopEdit ? '닫기' : '✏️ 정류장 수정'}</button>
+          </div>
+          {stopEdit && (
+            <div className="form rs-stop-form">
+              <label>관리자용 이름<input value={sf.name} onChange={(e) => setSf({ ...sf, name: e.target.value })} /></label>
+              <label className="check"><input type="checkbox" checked={sf.same} onChange={(e) => setSf({ ...sf, same: e.target.checked })} /><span>학부모에게도 같은 이름으로 보이기</span></label>
+              {!sf.same && <label>학부모용 이름<input value={sf.pname} onChange={(e) => setSf({ ...sf, pname: e.target.value })} placeholder="예: 원곡초 정문 앞 큰길" /></label>}
+              <label>주소<input value={sf.address} onChange={(e) => setSf({ ...sf, address: e.target.value })} placeholder="원선로47" /></label>
+              <label>대기 위치<input value={sf.wait} onChange={(e) => setSf({ ...sf, wait: e.target.value })} placeholder="예: 정문 앞 편의점 쪽" /></label>
+              <PickMap lat={sf.lat} lng={sf.lng} onPick={(a, b) => setSf((x) => ({ ...x, lat: a, lng: b }))} />
+              <p className="muted tiny">이 정류장을 쓰는 다른 운행에도 같이 바뀌어요.</p>
+              <button className="primary" onClick={saveStop}>정류장 저장</button>
+            </div>
+          )}
+          {stopMsg && <div className={stopMsg.startsWith('✅') ? 'notice-ok small' : 'error'}>{stopMsg}</div>}
+          <label className="small">이 운행에서 다른 정류장으로 바꾸기
+            <select value={stopId} onChange={(e) => setStopId(e.target.value)}>
+              {data.stops.filter((x) => x.active || x.id === rs.stop_id).map((x) => <option key={x.id} value={x.id}>{x.name}{x.id === rs.stop_id ? ' (지금)' : ''}</option>)}
+            </select>
+          </label>
+        </div>
         <div className="row">
           <label className="grow">도착 시간<input type="time" value={time} onChange={(e) => setTime(e.target.value)} /></label>
           <label className="grow">요일 <span className="hint">(비우면 운행 요일 전체)</span><input value={days} onChange={(e) => setDays(e.target.value.replace(/[^월화수목금토,]/g, ''))} placeholder="예: 월,수,금" /></label>
@@ -376,7 +422,7 @@ function RunStopSheet({ data, run, rs, students, member, onClose, onSaved }: {
         <ul className="plain">
           {rides.map((r, i) => (
             <li key={r.id ?? `n${i}`} className="item-row">
-              <span className="grow">{nameOf(r.student_id)}</span>
+              <span className="grow ride-name">{nameOf(r.student_id)}</span>
               <select value={r.action} onChange={(e) => setRides(rides.map((x, j) => (j === i ? { ...x, action: e.target.value as Ride['action'] } : x)))}>
                 <option value="board">⬆ 승차</option><option value="alight">⬇ 하차</option>
               </select>

@@ -593,3 +593,7 @@ a.btn.call { background: var(--in-soft); padding: 8px 10px; }
 .sh-notice p { margin: 8px 0 0; font-size: 14px; line-height: 1.6; word-break: keep-all; }
 .sh-stop-note { font-size: 13px; background: #f4f8f2; border-radius: 10px; padding: 8px 10px; margin: 0; color: #1f5b45; word-break: keep-all; }
 .item-row .small-btn { padding: 4px 10px; margin-left: 6px; white-space: nowrap; }
+.rs-stop-box { display: flex; flex-direction: column; gap: 8px; background: #f2f6ff; border-radius: 12px; padding: 10px 12px; }
+.rs-stop-form { background: #fff; border-radius: 10px; padding: 10px; }
+.ride-name { min-width: 64px; white-space: nowrap; font-weight: 600; }
+.rv-edit { margin-top: 6px; border: 1px solid var(--line); background: #fff; border-radius: 8px; padding: 3px 10px; font-size: 12px; cursor: pointer; }

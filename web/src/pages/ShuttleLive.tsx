@@ -141,6 +141,7 @@ export function RouteView({ data, run, day, trip, place, names, mineOnly, onEdit
                     </div>
                   )}
                   {onEditStop && kids.length === 0 && <div className="muted tiny">이날 타는 아이 없음</div>}
+                  {onEditStop && <button className="rv-edit" onClick={(e) => { e.stopPropagation(); onEditStop(rs) }}>✏️ 수정</button>}
                 </div>
                 <div className="rv-time">
                   {passedAt ? <><b>{clock(Date.parse(passedAt))}</b><div className="muted tiny">{t.shPassed}</div></>
