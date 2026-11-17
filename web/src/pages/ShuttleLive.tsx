@@ -3,7 +3,7 @@ import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { supabase, errText } from '../supabase'
 import { useI18n } from '../i18n'
-import { activeRide, describeRequest, hm, loadShuttle, ridersView, stopsOn, type RideRequest, type Run, type RunStop, type ShuttleData, type Stop } from './Shuttle'
+import { activeRide, describeRequest, type RideView, hm, loadShuttle, ridersView, stopsOn, type RideRequest, type Run, type RunStop, type ShuttleData, type Stop } from './Shuttle'
 
 /* 강철셔틀 실시간: 노선도 · 지도 경로 · 기사님 운행 모드 */
 
@@ -63,10 +63,12 @@ function etaOf(list: RunStop[], trip: Trip | undefined): Map<string, number> {
 
 /* ---------------- 노선도 + 지도 ---------------- */
 
-export function RouteView({ data, run, day, trip, place, names, mineOnly }: {
+export function RouteView({ data, run, day, trip, place, names, mineOnly, onEditStop, onUndo }: {
   data: ShuttleData; run: Run; day: string; trip?: Trip; place: Place | null
   names: (id: string) => string | null   // 우리 아이(또는 관리자는 전체) 이름, 아니면 null
   mineOnly?: boolean
+  onEditStop?: (rs: RunStop) => void       // 관리자: 정류장 눌러 고치기
+  onUndo?: (v: RideView, rsId: string) => void  // 관리자: 하루 변경 되돌리기
 }): JSX.Element {
   const { t } = useI18n()
   const [tab, setTab] = useState<'route' | 'map'>('route')
@@ -105,20 +107,30 @@ export function RouteView({ data, run, day, trip, place, names, mineOnly }: {
             const mine = kids.some(({ v }) => activeRide(v))
             const e = eta.get(rs.id)
             return (
-              <li key={rs.id} className={`rv-stop ${passedAt ? 'done' : ''} ${mine && mineOnly ? 'mine' : ''}`}>
+              <li key={rs.id} className={`rv-stop ${passedAt ? 'done' : ''} ${mine && mineOnly ? 'mine' : ''} ${onEditStop ? 'editable' : ''}`}
+                onClick={onEditStop ? () => onEditStop(rs) : undefined}>
                 <span className="rv-dot">{passedAt ? '✓' : String(i + 1).padStart(2, '0')}</span>
                 <div className="grow">
                   <b>{st?.name ?? '?'}</b>
                   {st?.wait_note && <div className="muted tiny">{st.wait_note}</div>}
-                  {kids.map(({ v, n }) => (
-                    <div key={v.key} className={`rv-kid ${v.action} ${v.tag ? 'tag-' + v.tag : ''}`}>
-                      {(v.action === 'board' ? t.shBoard : t.shAlight).replace('{name}', n!)}
-                      {v.tag === 'skip' && <em> {t.rqTagSkip}</em>}
-                      {v.tag === 'add' && <em> {t.rqTagAdd}</em>}
-                      {v.tag === 'moved' && <em> {v.to ? `→ ${v.to}` : t.rqTagStopped}</em>}
-                      {v.tag === 'new' && <em> {t.rqTagNew}</em>}
+                  {kids.length > 0 && (
+                    <div className="riders">
+                      {kids.map(({ v, n }) => (
+                        <span key={v.key} className={`rider ${v.action} ${v.tag ? 'tag-' + v.tag : ''}`} title={v.note}>
+                          {v.action === 'board' ? '⬆' : '⬇'} {(v.action === 'board' ? t.shBoard : t.shAlight).replace('{name}', n!)}
+                          {v.tag === 'skip' && <em>{t.rqTagSkip}</em>}
+                          {v.tag === 'add' && <em>{t.rqTagAdd}</em>}
+                          {v.tag === 'moved' && <em>{v.to ? `→ ${v.to}` : t.rqTagStopped}</em>}
+                          {v.tag === 'new' && <em>{t.rqTagNew}</em>}
+                          {onEditStop && v.note && v.tag && <small> · {v.note}</small>}
+                          {onUndo && (v.tag === 'skip' || v.tag === 'add') && (
+                            <button className="undo" title="하루 변경 취소" onClick={(e) => { e.stopPropagation(); onUndo(v, rs.id) }}>↩</button>
+                          )}
+                        </span>
+                      ))}
                     </div>
-                  ))}
+                  )}
+                  {onEditStop && kids.length === 0 && <div className="muted tiny">이날 타는 아이 없음</div>}
                 </div>
                 <div className="rv-time">
                   {passedAt ? <><b>{clock(Date.parse(passedAt))}</b><div className="muted tiny">{t.shPassed}</div></>

@@ -226,10 +226,11 @@ export default function ShuttleTab({ students, member }: { students: Student[]; 
                   <button className="primary wide" onClick={() => setDriving(run)}>{trip && !trip.ended_at ? '🚐 운행 화면 열기 (기사님 폰)' : '▶ 운행 시작 (기사님 폰 GPS)'}</button>
                 )}
                 {!liveOk && <p className="notice small">실시간 위치는 Supabase에서 <b>schema-v12-shuttle-live.sql</b> 을 실행한 뒤 쓸 수 있어요.</p>}
-                {isToday && <RouteView data={data} run={run} day={day} trip={trip} place={place} names={(id) => nameOf(id)} />}
+                {isToday && <RouteView data={data} run={run} day={day} trip={trip} place={place} names={(id) => nameOf(id)}
+                  onEditStop={(rs) => setEdit({ run, rs })} onUndo={(v, rsId) => undoException(v, rsId)} />}
               </div>
             )}
-            {open === run.id && (
+            {open === run.id && !isToday && (
               <ol className="route">
                 {run.kind !== 'to' && <li className="dojang"><span className="rt">출발</span><span>🥋 태권도장 {run.kind === 'mixed' ? '(하원 아이들 승차)' : '승차'}</span></li>}
                 {list.map((rs) => {

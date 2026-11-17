@@ -536,3 +536,7 @@ a.btn.call { background: var(--in-soft); padding: 8px 10px; }
 .new-kid .row { flex-wrap: nowrap; min-width: 0; }
 .new-kid .row input.grow { min-width: 0; flex: 1; }
 .new-kid .row input[placeholder="관계"] { width: 76px !important; flex: none; }
+.rv .riders { margin-top: 6px; }
+.rv .rider { font-weight: 600; }
+.rv-stop.editable { cursor: pointer; }
+.rv-stop.editable:hover { background: #f7faf6; }
