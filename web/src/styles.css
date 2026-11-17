@@ -574,3 +574,16 @@ a.btn.call { background: var(--in-soft); padding: 8px 10px; }
 .geo-box { display: flex; flex-direction: column; gap: 6px; background: #f2f6ff; border-radius: 12px; padding: 10px 12px; }
 .geo-fails li { padding: 6px 0; border-bottom: 1px solid var(--line); cursor: pointer; }
 .geo-fails li:last-child { border-bottom: 0; }
+
+/* ---------- 지도: 정류장 이름표 · 범례 ---------- */
+.map-stop { display: inline-flex; align-items: center; gap: 0; white-space: nowrap; filter: drop-shadow(0 1px 3px rgba(0,0,0,.25)); }
+.map-stop .num { width: 26px; height: 26px; border-radius: 50%; background: #fff; border: 2px solid #1f5b45; color: #1f5b45; font-weight: 800; font-size: 12px; display: flex; align-items: center; justify-content: center; position: relative; z-index: 1; box-sizing: border-box; }
+.map-stop .nm { background: #fff; color: #1f2a24; font-size: 12px; font-weight: 600; padding: 3px 9px 3px 14px; margin-left: -10px; border-radius: 0 999px 999px 0; border: 1px solid #d5ddd2; }
+.map-stop.passed .num { background: #1f5b45; color: #fff; }
+.map-stop.mine .num { border-color: #e0a100; box-shadow: 0 0 0 4px rgba(224,161,0,.35); }
+.map-stop.mine .nm { background: #fff8e1; border-color: #f0b429; }
+.map-stop.dojang .num { border-radius: 8px; background: #1f5b45; border-color: #1f5b45; }
+.rv-legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: #4b5a49; margin: 8px 2px 2px; }
+.rv-legend i { display: inline-block; width: 18px; height: 4px; border-radius: 2px; vertical-align: middle; margin-right: 4px; }
+.lg-route { background: #9bbf95; } .lg-passed { background: #1f5b45; }
+.lg-mine { width: 10px !important; height: 10px !important; border-radius: 50% !important; background: #f0b429; }

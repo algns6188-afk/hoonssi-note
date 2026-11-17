@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { createMap, onMapFallback, type LL, type LineH, type MapAdapter, type MarkerH } from '../mapAdapter'
+import { createMap, onMapFallback, roadPath, type LL, type MapAdapter, type MarkerH } from '../mapAdapter'
 import { supabase, errText } from '../supabase'
 import { useI18n } from '../i18n'
 import { activeRide, describeRequest, type RideView, hm, loadShuttle, ridersView, stopsOn, type RideRequest, type Run, type RunStop, type ShuttleData, type Stop } from './Shuttle'
@@ -177,9 +177,7 @@ function RouteMap({ data, run, list, trip, place, mineIds }: {
   const { t } = useI18n()
   const box = useRef<HTMLDivElement>(null)
   const map = useMapAdapter(box, [37.32, 126.83], 14)
-  const bus = useRef<MarkerH | null>(null)
-  const trail = useRef<LineH | null>(null)
-  const [trailPts, setTrailPts] = useState<LL[]>([])
+  const [road, setRoad] = useState<{ path: LL[]; idx: number[] } | null>(null)
 
   const pts = useMemo(() => {
     const out: { ll: LL; label: string; id: string; name: string }[] = []
@@ -192,53 +190,46 @@ function RouteMap({ data, run, list, trip, place, mineIds }: {
     if (dojang && run.kind !== 'from') out.push({ ...dojang, id: 'dojang-end' })
     return out
   }, [data, run, list, place])
+  const ptsKey = pts.map((p) => p.ll.join(',')).join(';')
 
-  // 지나온 길 불러오기
+  // 도로 경로 (안 되면 직선)
   useEffect(() => {
-    if (!trip) { setTrailPts([]); return }
-    supabase.from('shuttle_points').select('lat,lng').eq('trip_id', trip.id).order('at').limit(2000)
-      .then(({ data: d }) => setTrailPts(((d as { lat: number; lng: number }[]) ?? []).map((p) => [p.lat, p.lng])))
-  }, [trip?.id])
-  useEffect(() => {
-    if (trip?.lat != null && trip.lng != null) setTrailPts((p) => [...p, [trip.lat!, trip.lng!]])
-  }, [trip?.lat, trip?.lng])
+    let alive = true
+    setRoad(null)
+    roadPath(pts.map((p) => p.ll)).then((r) => { if (alive) setRoad(r ?? { path: pts.map((p) => p.ll), idx: pts.map((_, i) => i) }) })
+    return () => { alive = false }
+  }, [ptsKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const fitAll = useCallback(() => {
-    const all: LL[] = pts.map((p) => p.ll)
-    if (trip?.lat != null && trip.lng != null) all.push([trip.lat, trip.lng])
-    map?.fit(all)
-  }, [map, pts, trip?.lat, trip?.lng])
+  // 차량은 실시간으로 움직이지 않고, 마지막으로 도착한 정류장에 표시
+  const running = !!trip && !trip.ended_at
+  let at = -1
+  if (trip) {
+    pts.forEach((p, i) => { if (trip.passed[p.id]) at = i })
+    if (at === -1 && pts[0]?.id === 'dojang') at = 0           // 도장에서 출발함
+    if (trip.ended_at) at = pts.length - 1
+  }
+  const busLL = running && at >= 0 ? pts[at].ll : null
 
-  // 정류장·예정 경로
+  const fitAll = useCallback(() => { map?.fit(road?.path.length ? road.path : pts.map((p) => p.ll)) }, [map, road, pts])
+
   useEffect(() => {
-    if (!map) return
+    if (!map || !road) return
     const made: { remove(): void }[] = []
-    if (pts.length > 1) made.push(map.polyline(pts.map((p) => p.ll), { color: '#9bbf95', weight: 5, dashed: true }))
-    for (const p of pts) {
-      const passed = !!trip?.passed[p.id]
-      made.push(map.marker(p.ll, pinHtml(p.label, `${passed ? 'passed' : ''} ${mineIds.has(p.id) ? 'mine' : ''} ${p.id.startsWith('dojang') ? 'dojang' : ''}`), 26, p.name))
+    if (road.path.length > 1) {
+      made.push(map.polyline(road.path, { color: '#9bbf95', weight: 6 }))
+      if (at > 0) made.push(map.polyline(road.path.slice(0, road.idx[at] + 1), { color: '#1f5b45', weight: 7 }))
     }
-    fitAll()
+    pts.forEach((p, i) => {
+      const passed = trip && i <= at
+      const cls = `${passed ? 'passed' : ''} ${mineIds.has(p.id) ? 'mine' : ''} ${p.id.startsWith('dojang') ? 'dojang' : ''}`
+      const html = `<div class="map-stop ${cls}"><span class="num">${p.label}</span><span class="nm">${p.name.replace(/[<>&]/g, '')}</span></div>`
+      made.push(map.marker(p.ll, html, 26, p.name, mineIds.has(p.id) ? 300 : 200, [13, 13]))
+    })
+    if (busLL) made.push(map.marker(busLL, '<div class="map-bus">🚐</div>', 36, '', 1000, [18, 46]))
     return () => made.forEach((x) => x.remove())
-  }, [map, pts, mineIds, JSON.stringify(trip?.passed ?? {})]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [map, road, pts, mineIds, at, busLL?.join(',')]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // 지나온 길
-  useEffect(() => {
-    if (!map) return
-    if (trail.current) trail.current.setPath(trailPts)
-    else if (trailPts.length > 1) trail.current = map.polyline(trailPts, { color: '#1f5b45', weight: 6 })
-  }, [map, trailPts])
-  useEffect(() => () => { trail.current = null; bus.current = null }, [map])
-
-  // 차량 위치
-  useEffect(() => {
-    if (!map) return
-    if (trip?.lat != null && trip.lng != null && !trip.ended_at) {
-      const ll: LL = [trip.lat, trip.lng]
-      if (bus.current) bus.current.setPos(ll)
-      else bus.current = map.marker(ll, '<div class="map-bus">🚐</div>', 36, '', 1000)
-    } else if (bus.current) { bus.current.remove(); bus.current = null }
-  }, [map, trip?.lat, trip?.lng, trip?.ended_at])
+  useEffect(() => { if (map && road) fitAll() }, [map, road]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const noCoords = pts.filter((p) => !p.id.startsWith('dojang')).length === 0
   return (
@@ -246,8 +237,14 @@ function RouteMap({ data, run, list, trip, place, mineIds }: {
       <div ref={box} className="rv-map" />
       <div className="rv-map-btns">
         <button onClick={fitAll}>{t.shFitAll}</button>
-        {trip?.lat != null && <button onClick={() => map?.setView([trip.lat!, trip.lng!], 16)}>🚐 {t.shBusPos}</button>}
+        {busLL && <button onClick={() => map?.setView(busLL, 16)}>🚐 {t.shBusPos}</button>}
       </div>
+      <div className="rv-legend">
+        <span><i className="lg-route" /> {t.shLegendRoute}</span>
+        <span><i className="lg-passed" /> {t.shLegendPassed}</span>
+        {mineIds.size > 0 && <span><i className="lg-mine" /> {t.shLegendMine}</span>}
+      </div>
+      <p className="muted tiny">{t.shBusNote}</p>
       {noCoords && <p className="muted small center">{t.shNoCoords}</p>}
     </div>
   )

@@ -13,7 +13,7 @@ export interface MapAdapter {
   kind: 'naver' | 'osm'
   setView(ll: LL, zoom: number): void
   fit(lls: LL[]): void
-  marker(ll: LL, html: string, size: number, title?: string, z?: number): MarkerH
+  marker(ll: LL, html: string, size: number, title?: string, z?: number, anchor?: [number, number]): MarkerH
   polyline(lls: LL[], o: { color: string; weight: number; dashed?: boolean }): LineH
   onClick(cb: (lat: number, lng: number) => void): void
   destroy(): void
@@ -60,8 +60,9 @@ function naverMap(el: HTMLElement, center: LL, zoom: number): MapAdapter {
       map.fitBounds(b, { top: 40, right: 30, bottom: 30, left: 30 })
       if (map.getZoom() > 16) map.setZoom(16)
     },
-    marker: (ll, html, size, title, z) => {
-      const m = new N.Marker({ position: P(ll), map, title, zIndex: z ?? 100, icon: { content: html, anchor: new N.Point(size / 2, size / 2) } })
+    marker: (ll, html, size, title, z, anchor) => {
+      const a = anchor ?? [size / 2, size / 2]
+      const m = new N.Marker({ position: P(ll), map, title, zIndex: z ?? 100, icon: { content: html, anchor: new N.Point(a[0], a[1]) } })
       return { setPos: (p) => m.setPosition(P(p)), remove: () => m.setMap(null) }
     },
     polyline: (lls, o) => {
@@ -80,8 +81,8 @@ function osmMap(el: HTMLElement, center: LL, zoom: number): MapAdapter {
     kind: 'osm',
     setView: (ll, z) => map.setView(ll, z),
     fit: (lls) => { if (lls.length) map.fitBounds(L.latLngBounds(lls), { padding: [30, 30], maxZoom: 16 }) },
-    marker: (ll, html, size, title, z) => {
-      const m = L.marker(ll, { icon: L.divIcon({ className: '', html, iconSize: [size, size], iconAnchor: [size / 2, size / 2] }), zIndexOffset: z ?? 0 }).addTo(map)
+    marker: (ll, html, size, title, z, anchor) => {
+      const m = L.marker(ll, { icon: L.divIcon({ className: '', html, iconSize: anchor ? undefined : [size, size], iconAnchor: anchor ?? [size / 2, size / 2] }), zIndexOffset: z ?? 0 }).addTo(map)
       if (title) m.bindTooltip(title)
       return { setPos: (p) => m.setLatLng(p), remove: () => m.remove() }
     },
@@ -126,4 +127,43 @@ export function addressQuery(address: string, name: string): string | null {
   if (/경기|안산시/.test(address)) return address.trim()
   const m = /([가-힣][가-힣0-9]*?(?:로|길)(?:[0-9]+(?:번|안)?길)?)\s?([0-9]+(?:-[0-9]+)?)/.exec(src)
   return m ? `경기도 안산시 단원구 ${m[1]} ${m[2]}` : null
+}
+
+/** 정류장 순서대로 도로를 따라가는 경로 (무료 OSRM). 한 번 구하면 이 기기에 저장. 실패하면 null(직선으로 그림)
+ *  idx[i] = i번째 정류장이 경로의 몇 번째 점인지 */
+export async function roadPath(points: LL[]): Promise<{ path: LL[]; idx: number[] } | null> {
+  if (points.length < 2) return null
+  const key = 'kc-road-' + points.map((p) => `${p[0].toFixed(5)},${p[1].toFixed(5)}`).join(';')
+  try {
+    const c = localStorage.getItem(key)
+    if (c) return JSON.parse(c)
+  } catch { /* 없음 */ }
+  try {
+    const coords = points.map((p) => `${p[1]},${p[0]}`).join(';')
+    const ctl = new AbortController()
+    const tm = window.setTimeout(() => ctl.abort(), 10000)
+    const r = await fetch(`https://router.project-osrm.org/route/v1/driving/${coords}?overview=full&geometries=geojson`, { signal: ctl.signal })
+    clearTimeout(tm)
+    const j = await r.json()
+    const line: [number, number][] = j?.routes?.[0]?.geometry?.coordinates
+    if (!line?.length) return null
+    const path: LL[] = line.map(([x, y]) => [y, x])
+    // 각 정류장에 가장 가까운 경로 점 (앞에서부터 차례로)
+    const idx: number[] = []
+    let from = 0
+    for (const p of points) {
+      let best = from, bd = Infinity
+      for (let i = from; i < path.length; i++) {
+        const d = (path[i][0] - p[0]) ** 2 + (path[i][1] - p[1]) ** 2
+        if (d < bd) { bd = d; best = i }
+      }
+      idx.push(best)
+      from = best
+    }
+    const out = { path, idx }
+    try { localStorage.setItem(key, JSON.stringify(out)) } catch { /* 저장 공간 없음 */ }
+    return out
+  } catch {
+    return null
+  }
 }
