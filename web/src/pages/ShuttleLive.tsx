@@ -10,6 +10,7 @@ export interface Trip {
   id: string; run_id: string; day: string; started_at: string; ended_at: string | null
   lat: number | null; lng: number | null; speed: number | null; pos_at: string | null
   passed: Record<string, string>
+  kid_done?: boolean   // 학부모: 우리 아이 정류장을 다 지남 → 차량 위치 안 보여 줌
 }
 export interface Place { name: string; lat: number | null; lng: number | null }
 
@@ -18,22 +19,31 @@ const atToday = (time: string): number => Date.parse(`${kstDate()}T${time.slice(
 const clock = (ms: number): string => new Date(ms + 9 * 3600_000).toISOString().slice(11, 16)
 
 /** 오늘 운행 기록 (실시간) */
-export function useTrips(): { trips: Trip[]; v9: boolean } {
+/** 오늘 운행 기록. 관리자는 전체(실시간), 학부모는 우리 아이 타는 운행의 진행 상황만(좌표 없음, 15초마다) */
+export function useTrips(parent = false): { trips: Trip[]; v9: boolean } {
   const [trips, setTrips] = useState<Trip[]>([])
   const [ok, setOk] = useState(true)
   const load = useCallback(async () => {
+    if (parent) {
+      const { data, error } = await supabase.rpc('parent_trips')
+      if (error) { setTrips([]); return }
+      setTrips(((data as Omit<Trip, 'id' | 'day' | 'lat' | 'lng' | 'speed' | 'pos_at'>[]) ?? []).map((x) => ({
+        ...x, id: 'p-' + x.run_id, day: kstDate(), lat: null, lng: null, speed: null, pos_at: null
+      })))
+      return
+    }
     const { data, error } = await supabase.from('shuttle_trips').select('*').eq('day', kstDate())
     if (error) setOk(false)
     else setTrips((data as Trip[]) ?? [])
-  }, [])
+  }, [parent])
   useEffect(() => {
     load()
-    const ch = supabase.channel('shuttle-trips-' + Math.random().toString(36).slice(2))
+    const ch = parent ? null : supabase.channel('shuttle-trips-' + Math.random().toString(36).slice(2))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'shuttle_trips' }, () => load())
       .subscribe()
-    const iv = window.setInterval(load, 30_000) // 실시간이 끊겨도 30초마다
-    return () => { void supabase.removeChannel(ch); clearInterval(iv) }
-  }, [load])
+    const iv = window.setInterval(load, parent ? 15_000 : 30_000)
+    return () => { if (ch) void supabase.removeChannel(ch); clearInterval(iv) }
+  }, [load, parent])
   return { trips, v9: ok }
 }
 
@@ -76,7 +86,7 @@ export function RouteView({ data, run, day, trip, place, names, mineOnly, onEdit
   const stopOf = (id: string): Stop | undefined => data.stops.find((s) => s.id === id)
   const eta = etaOf(list, trip)
   const lastPassed = list.reduce((n, rs, i) => (trip?.passed[rs.id] ? i : n), -1)
-  const running = !!trip && !trip.ended_at
+  const running = !!trip && !trip.ended_at && !trip.kid_done
   const now = Date.now()
 
   return (
@@ -88,7 +98,8 @@ export function RouteView({ data, run, day, trip, place, names, mineOnly, onEdit
       {running && trip?.pos_at && (
         <p className="muted tiny rv-sig">📡 {t.shUpdated.replace('{n}', String(Math.max(0, Math.round((now - Date.parse(trip.pos_at)) / 1000))))}</p>
       )}
-      {running && !trip?.pos_at && <p className="muted tiny rv-sig">📡 {t.shNoGps}</p>}
+      {running && !trip?.pos_at && !mineOnly && <p className="muted tiny rv-sig">📡 {t.shNoGps}</p>}
+      {trip?.kid_done && !trip.ended_at && mineOnly && <p className="muted tiny rv-sig">✓ {t.shKidDone}</p>}
 
       {tab === 'route' ? (
         <ol className="rv-line">
@@ -201,12 +212,13 @@ function RouteMap({ data, run, list, trip, place, mineIds }: {
   }, [ptsKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // 차량은 실시간으로 움직이지 않고, 마지막으로 도착한 정류장에 표시
-  const running = !!trip && !trip.ended_at
+  const running = !!trip && !trip.ended_at && !trip.kid_done
   let at = -1
   if (trip) {
     pts.forEach((p, i) => { if (trip.passed[p.id]) at = i })
     if (at === -1 && pts[0]?.id === 'dojang') at = 0           // 도장에서 출발함
     if (trip.ended_at) at = pts.length - 1
+    if (trip.kid_done && !trip.ended_at) at = -1   // 학부모: 우리 아이 끝난 뒤엔 위치 숨김
   }
   const busLL = running && at >= 0 ? pts[at].ll : null
 
@@ -413,7 +425,7 @@ export function ParentShuttle({ kids }: { kids: { id: string; name: string }[] }
   const [data, setData] = useState<ShuttleData | null>(null)
   const [open, setOpen] = useState<string | null>(null)
   const [asking, setAsking] = useState(false)
-  const { trips } = useTrips()
+  const { trips } = useTrips(true)
   const place = usePlace()
   const load = useCallback(async () => setData(await loadShuttle()), [])
   useEffect(() => {
@@ -443,17 +455,17 @@ export function ParentShuttle({ kids }: { kids: { id: string; name: string }[] }
         <h3 className="grow">🚐 {t.shTitle}</h3>
         {data.requestsOk && <button className="small-btn" onClick={() => setAsking(true)}>✏️ {t.rqButton}</button>}
       </div>
-      {runs.length === 0 && <p className="muted small">{t.rqNoRideToday}</p>}
+      {runs.length === 0 ? <p className="muted small">{t.rqNoRideToday}</p> : <p className="muted tiny">🔒 {t.shPrivacy}</p>}
       {runs.map(({ run, list }) => {
         const trip = trips.find((x) => x.run_id === run.id)
-        const st = !trip ? t.shBefore : trip.ended_at ? t.shEnded : t.shRunning
+        const st = !trip ? t.shBefore : trip.ended_at ? t.shEnded : trip.kid_done ? t.shKidDoneShort : t.shRunning
         const isOpen = firstOpen === run.id
         return (
           <div key={run.id} className={`ps-run ${isOpen ? 'open' : ''}`}>
             <button className="ps-head" onClick={() => setOpen(isOpen ? '' : run.id)}>
               <span className="rv-time"><b>{hm(list[0]?.at_time ?? null)}</b></span>
               <span className="grow"><b>{run.name}</b></span>
-              <span className={`chip ${trip && !trip.ended_at ? 'live' : ''}`}>{trip && !trip.ended_at ? '● ' : ''}{st}</span>
+              <span className={`chip ${trip && !trip.ended_at && !trip.kid_done ? 'live' : ''}`}>{trip && !trip.ended_at && !trip.kid_done ? '● ' : ''}{st}</span>
               <span className="muted">{isOpen ? '▲' : '▼'}</span>
             </button>
             {isOpen && <RouteView data={data} run={run} day={day} trip={trip} place={place} names={kidName} mineOnly />}
