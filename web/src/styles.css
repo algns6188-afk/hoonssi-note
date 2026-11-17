@@ -553,3 +553,10 @@ a.btn.call { background: var(--in-soft); padding: 8px 10px; }
 .pay-items { display: flex; flex-direction: column; gap: 4px; font-size: 14px; }
 .pay-items li { display: flex; justify-content: space-between; gap: 8px; }
 .sheet a.btn.toss { display: block; text-align: center; margin-top: 8px; }
+.pay-group { margin-top: 10px; border-radius: 14px; padding: 8px; border: 1px dashed transparent; }
+.pay-group.active { border-color: #c9d6fb; background: #fafcff; }
+.pay-group:not(.active) .bills li { opacity: .75; }
+.pay-group-head { display: flex; align-items: center; gap: 8px; margin: 2px 4px 4px; }
+.pay-group-head input { width: 20px; height: 20px; accent-color: var(--brand); }
+.pay-group-head { flex-wrap: wrap; }
+.pay-group-head .muted { flex-basis: 100%; margin-left: 28px; margin-top: -2px; }

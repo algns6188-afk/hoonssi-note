@@ -12,6 +12,7 @@ export function ParentPayments({ kids }: { kids: Student[] }): JSX.Element | nul
   const [reporting, setReporting] = useState<Invoice[] | null>(null)
   const [paying, setPaying] = useState<Invoice[] | null>(null)
   const [unpicked, setUnpicked] = useState<Set<string>>(new Set())   // 기본은 전부 선택, 뺀 것만 기억
+  const [group, setGroup] = useState<'tuition' | 'other' | null>(null) // 수련비 / 그 외는 계좌가 달라 따로 결제
   const [toast, setToast] = useState<string | null>(null)
   const [showHistory, setShowHistory] = useState(false)
 
@@ -64,10 +65,23 @@ export function ParentPayments({ kids }: { kids: Student[] }): JSX.Element | nul
   const unpaid = open.filter((i) => i.status === 'unpaid')
   const unpaidTotal = unpaid.reduce((s, i) => s + i.amount, 0)
   const paid = invoices.filter((i) => i.status === 'paid')
-  const picked = unpaid.filter((i) => !unpicked.has(i.id))
+  const gOf = (i: Invoice): 'tuition' | 'other' => (isTuition(i.item_name) ? 'tuition' : 'other')
+  const cur = group && unpaid.some((i) => gOf(i) === group) ? group : unpaid.some((i) => gOf(i) === 'tuition') ? 'tuition' : 'other'
+  const inGroup = unpaid.filter((i) => gOf(i) === cur)
+  const picked = inGroup.filter((i) => !unpicked.has(i.id))
   const pickedSum = picked.reduce((s, i) => s + i.amount, 0)
-  const allOn = picked.length === unpaid.length
-  const toggle = (id: string): void => { const n = new Set(unpicked); n.has(id) ? n.delete(id) : n.add(id); setUnpicked(n) }
+  const toggle = (i: Invoice): void => {
+    if (gOf(i) !== cur) {
+      // 다른 묶음을 누르면 그 묶음으로 바꾸고, 누른 것만 선택
+      setGroup(gOf(i))
+      setUnpicked(new Set(unpaid.filter((x) => gOf(x) === gOf(i) && x.id !== i.id).map((x) => x.id)))
+      return
+    }
+    const n = new Set(unpicked); n.has(i.id) ? n.delete(i.id) : n.add(i.id); setUnpicked(n)
+  }
+  const sections = (['tuition', 'other'] as const)
+    .map((g) => ({ g, items: open.filter((i) => gOf(i) === g) }))
+    .filter((x) => x.items.length)
 
   const flash = (m: string): void => {
     setToast(m)
@@ -85,37 +99,49 @@ export function ParentPayments({ kids }: { kids: Student[] }): JSX.Element | nul
         <p className="muted">{t.payNone}</p>
       ) : (
         <>
-          {unpaid.length > 1 && (
-            <label className="check pay-all">
-              <input type="checkbox" checked={allOn} onChange={() => setUnpicked(allOn ? new Set(unpaid.map((i) => i.id)) : new Set())} />
-              <span>{t.payAll}</span>
-            </label>
-          )}
-          <ul className="bills">
-            {open.map((i) => {
-              const on = i.status === 'unpaid' && !unpicked.has(i.id)
-              return (
-                <li key={i.id} className={`${i.status} ${on ? 'picked' : ''}`} onClick={i.status === 'unpaid' ? () => toggle(i.id) : undefined}>
-                  <div className="bill-main">
-                    {i.status === 'unpaid' && <input type="checkbox" className="bill-check" checked={on} onChange={() => toggle(i.id)} onClick={(e) => e.stopPropagation()} />}
-                    <div className="grow">
-                      <b>{itemLabel(i.item_name, i.period, lang)}</b>
-                      <div className="muted small">
-                        {kidName(i.student_id)}
-                        {i.due_date && ` · ${t.payDue} ${i.due_date.slice(5).replace('-', '/')}`}
-                      </div>
-                    </div>
-                    <b className="bill-amount">{won(i.amount, lang)}</b>
-                  </div>
-                  {i.status === 'reported' && <div className="bill-status">⏳ {t.payReported} · {t.payReportedBody}</div>}
-                </li>
-              )
-            })}
-          </ul>
+          {sections.map(({ g, items }) => {
+            const gUnpaid = items.filter((i) => i.status === 'unpaid')
+            const active = g === cur
+            const allOn = active && gUnpaid.length > 0 && gUnpaid.every((i) => !unpicked.has(i.id))
+            return (
+              <div key={g} className={`pay-group ${active ? 'active' : ''}`}>
+                <div className="pay-group-head">
+                  {gUnpaid.length > 0 && (
+                    <input type="checkbox" checked={allOn} onChange={() => {
+                      if (!active) { setGroup(g); setUnpicked(new Set()) } else setUnpicked(allOn ? new Set(gUnpaid.map((i) => i.id)) : new Set())
+                    }} />
+                  )}
+                  <b>{g === 'tuition' ? t.payGroupTuition : t.payGroupOther}</b>
+                  {sections.length > 1 && <span className="muted tiny">{t.paySeparate}</span>}
+                </div>
+                <ul className="bills">
+                  {items.map((i) => {
+                    const on = active && i.status === 'unpaid' && !unpicked.has(i.id)
+                    return (
+                      <li key={i.id} className={`${i.status} ${on ? 'picked' : ''}`} onClick={i.status === 'unpaid' ? () => toggle(i) : undefined}>
+                        <div className="bill-main">
+                          {i.status === 'unpaid' && <input type="checkbox" className="bill-check" checked={on} onChange={() => toggle(i)} onClick={(e) => e.stopPropagation()} />}
+                          <div className="grow">
+                            <b>{itemLabel(i.item_name, i.period, lang)}</b>
+                            <div className="muted small">
+                              {kidName(i.student_id)}
+                              {i.due_date && ` · ${t.payDue} ${i.due_date.slice(5).replace('-', '/')}`}
+                            </div>
+                          </div>
+                          <b className="bill-amount">{won(i.amount, lang)}</b>
+                        </div>
+                        {i.status === 'reported' && <div className="bill-status">⏳ {t.payReported} · {t.payReportedBody}</div>}
+                      </li>
+                    )
+                  })}
+                </ul>
+              </div>
+            )
+          })}
           {unpaid.length > 0 && (
             <div className="pay-bar">
               <div className="grow">
-                <div className="small muted">{t.paySelected.replace('{n}', String(picked.length))}</div>
+                <div className="small muted">{cur === 'tuition' ? t.payGroupTuition : t.payGroupOther} · {t.paySelected.replace('{n}', String(picked.length))}</div>
                 <b>{won(pickedSum, lang)}</b>
               </div>
               <button className="primary big" disabled={!picked.length} onClick={() => setPaying(picked)}>💳 {t.payNow}</button>
