@@ -198,29 +198,50 @@ export default function ShuttleTab({ students, member }: { students: Student[]; 
           initial={changing === 'new' ? undefined : changing} onClose={() => setChanging(null)} onDone={() => { setChanging(null); load() }} />
       )}
 
-      {runs.map((run) => {
-        const list = stopsOn(data, run, day, date)
-        const riders = list.flatMap((rs) => ridersView(data, rs, run, day, date)).filter(activeRide)
-        const changed = list.flatMap((rs) => ridersView(data, rs, run, day, date)).filter((v) => v.tag).length
-        const boards = riders.filter((r) => r.action === 'board').length
-        const alights = riders.filter((r) => r.action === 'alight').length
-        const onBoardMax = peakLoad(data, run, day)
-        const over = vehicle && onBoardMax > vehicle.capacity
-        const trip = isToday ? trips.find((t) => t.run_id === run.id) : undefined
+      {(() => {
+        const info = runs.map((run) => {
+          const list = stopsOn(data, run, day, date)
+          const views = list.flatMap((rs) => ridersView(data, rs, run, day, date))
+          const riders = views.filter(activeRide)
+          return {
+            run, list, changed: views.filter((v) => v.tag).length,
+            boards: riders.filter((r) => r.action === 'board').length,
+            alights: riders.filter((r) => r.action === 'alight').length,
+            max: peakLoad(data, run, day),
+            trip: isToday ? trips.find((t) => t.run_id === run.id) : undefined
+          }
+        })
+        if (!info.length) return null
+        const sel = info.find((x) => x.run.id === open) ?? info.find((x) => x.trip && !x.trip.ended_at) ?? info[0]
+        const { run, list, trip } = sel
         return (
-          <section key={run.id} className="card run">
-            <button className="run-head" onClick={() => setOpen(open === run.id ? null : run.id)}>
-              <span className="run-time">{hm(list[0]?.at_time ?? null)}~{hm(list.at(-1)?.at_time ?? null)}</span>
-              <span className="grow"><b>{run.name}</b> <span className="chip">{KIND[run.kind]}</span>
-                {trip && <span className={`chip ${trip.ended_at ? '' : 'live'}`}>{trip.ended_at ? '운행 끝' : '● 운행 중'}</span>}
-                {changed > 0 && <span className="chip changed">변경 {changed}</span>}</span>
-              <span className="small">
-                {boards > 0 && <>⬆ {boards} </>}{alights > 0 && <>⬇ {alights}</>}
-                <span className={over ? 'danger' : 'muted'}> · 최대 {onBoardMax}명{over ? ` (정원 ${vehicle.capacity} 초과)` : ''}</span>
-              </span>
-              <span className="muted">{open === run.id ? '▲' : '▼'}</span>
-            </button>
-            {open === run.id && (
+          <>
+            <div className="run-strip">
+              {info.map((x) => {
+                const over = vehicle && x.max > vehicle.capacity
+                return (
+                  <button key={x.run.id} className={`run-tile ${x.run.id === sel.run.id ? 'on' : ''}`} onClick={() => setOpen(x.run.id)}>
+                    <span className="run-time">{hm(x.list[0]?.at_time ?? null)}~{hm(x.list.at(-1)?.at_time ?? null)}</span>
+                    <b>{x.run.name}</b>
+                    <span className="run-tile-chips">
+                      <span className="chip">{KIND[x.run.kind]}</span>
+                      {x.trip && <span className={`chip ${x.trip.ended_at ? '' : 'live'}`}>{x.trip.ended_at ? '끝' : '● 운행 중'}</span>}
+                      {x.changed > 0 && <span className="chip changed">변경 {x.changed}</span>}
+                    </span>
+                    <span className="small">
+                      {x.boards > 0 && <>⬆ {x.boards} </>}{x.alights > 0 && <>⬇ {x.alights}</>}
+                    </span>
+                    <span className={`tiny ${over ? 'danger' : 'muted'}`}>최대 {x.max}명{over ? ` · 정원 ${vehicle.capacity} 초과` : ''}</span>
+                  </button>
+                )
+              })}
+            </div>
+            <section className="card run run-detail">
+              <div className="run-detail-head">
+                <span className="run-time">{hm(list[0]?.at_time ?? null)}~{hm(list.at(-1)?.at_time ?? null)}</span>
+                <b>{run.name}</b> <span className="chip">{KIND[run.kind]}</span>
+              </div>
+            {(
               <div className="live-box">
                 {isToday && liveOk && (
                   <button className="primary wide" onClick={() => setDriving(run)}>{trip && !trip.ended_at ? '🚐 운행 화면 열기 (기사님 폰)' : '▶ 운행 시작 (기사님 폰 GPS)'}</button>
@@ -230,7 +251,7 @@ export default function ShuttleTab({ students, member }: { students: Student[]; 
                   onEditStop={(rs) => setEdit({ run, rs })} onUndo={(v, rsId) => undoException(v, rsId)} />}
               </div>
             )}
-            {open === run.id && !isToday && (
+            {!isToday && (
               <ol className="route">
                 {run.kind !== 'to' && <li className="dojang"><span className="rt">출발</span><span>🥋 태권도장 {run.kind === 'mixed' ? '(하원 아이들 승차)' : '승차'}</span></li>}
                 {list.map((rs) => {
@@ -267,9 +288,10 @@ export default function ShuttleTab({ students, member }: { students: Student[]; 
                 {run.kind !== 'from' && <li className="dojang"><span className="rt">도착</span><span>🥋 태권도장 하차{run.class_start ? ` · 수업 ${hm(run.class_start)}` : ''}</span></li>}
               </ol>
             )}
-          </section>
+            </section>
+          </>
         )
-      })}
+      })()}
       {runs.length === 0 && <p className="muted center">{day}요일 운행이 없어요.</p>}
 
       {edit && <RunStopSheet data={data} run={edit.run} rs={edit.rs} students={students} member={member} onClose={() => setEdit(null)} onSaved={load} />}

@@ -560,3 +560,13 @@ a.btn.call { background: var(--in-soft); padding: 8px 10px; }
 .pay-group-head input { width: 20px; height: 20px; accent-color: var(--brand); }
 .pay-group-head { flex-wrap: wrap; }
 .pay-group-head .muted { flex-basis: 100%; margin-left: 28px; margin-top: -2px; }
+
+/* ---------- 차량: 운행 가로 카드 ---------- */
+.run-strip { display: flex; gap: 8px; overflow-x: auto; padding: 4px 2px 10px; scroll-snap-type: x proximity; -webkit-overflow-scrolling: touch; }
+.run-tile { flex: none; width: 150px; scroll-snap-align: start; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; text-align: left; background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 10px 12px; }
+.run-tile b { font-size: 15px; line-height: 1.25; }
+.run-tile .run-time { font-size: 13px; }
+.run-tile-chips { display: flex; flex-wrap: wrap; gap: 3px; }
+.run-tile-chips .chip { font-size: 10px; padding: 1px 6px; }
+.run-tile.on { border: 2px solid var(--brand); background: #f2f6ff; padding: 9px 11px; }
+.run-detail-head { display: flex; align-items: center; gap: 8px; padding: 4px 2px 8px; flex-wrap: wrap; }
