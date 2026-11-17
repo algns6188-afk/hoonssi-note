@@ -32,20 +32,30 @@ Deno.serve(async (req) => {
     const { data: u } = await db.auth.getUser(token)
     if (!u?.user) return json({ error: 'login_required' }, 401)
 
-    const { paymentKey, orderId, amount } = await req.json()
+    const { paymentKey, orderId, amount, invoiceIds } = await req.json()
     if (typeof paymentKey !== 'string' || typeof orderId !== 'string' || typeof amount !== 'number') return json({ error: 'bad_request' }, 400)
-    // orderId = "inv-<청구서 id>-<임의값>"
-    const m = /^inv-([0-9a-f-]{36})-[A-Za-z0-9]+$/.exec(orderId)
-    if (!m) return json({ error: 'bad_order' }, 400)
+    // 여러 건 한 번에: invoiceIds, 예전 방식(한 건): orderId = "inv-<청구서 id>-<임의값>"
+    let ids: string[] = Array.isArray(invoiceIds) ? invoiceIds.filter((x: unknown) => typeof x === 'string') : []
+    if (!ids.length) {
+      const m = /^inv-([0-9a-f-]{36})-[A-Za-z0-9]+$/.exec(orderId)
+      if (m) ids = [m[1]]
+    }
+    if (!ids.length || ids.length > 50 || ids.some((x) => !/^[0-9a-f-]{36}$/.test(x))) return json({ error: 'bad_order' }, 400)
 
-    const { data: inv } = await db.from('invoices').select('*').eq('id', m[1]).maybeSingle()
-    if (!inv) return json({ error: 'no_invoice' }, 404)
-    const { data: g } = await db.from('guardians').select('user_id').eq('student_id', inv.student_id).eq('user_id', u.user.id).maybeSingle()
+    const { data: invs } = await db.from('invoices').select('*').in('id', ids)
+    if (!invs || invs.length !== ids.length) return json({ error: 'no_invoice' }, 404)
     const { data: mem } = await db.from('members').select('role,org_id').eq('user_id', u.user.id).maybeSingle()
-    if (!g && !(mem && mem.org_id === inv.org_id && mem.role !== 'parent')) return json({ error: 'not_allowed' }, 403)
-    if (inv.status === 'paid') return json({ ok: true, already: true })
-    if (inv.status === 'canceled') return json({ error: 'canceled' }, 409)
-    if (amount !== inv.amount) return json({ error: 'amount_mismatch' }, 400)
+    const { data: gs } = await db.from('guardians').select('student_id').eq('user_id', u.user.id)
+    const mine = new Set((gs ?? []).map((g: { student_id: string }) => g.student_id))
+    for (const inv of invs) {
+      const staff = mem && mem.org_id === inv.org_id && mem.role !== 'parent'
+      if (!mine.has(inv.student_id) && !staff) return json({ error: 'not_allowed' }, 403)
+    }
+    const open = invs.filter((i: { status: string }) => i.status !== 'paid')
+    if (!open.length) return json({ ok: true, already: true })
+    if (invs.some((i: { status: string }) => i.status === 'canceled')) return json({ error: 'canceled' }, 409)
+    const sum = invs.reduce((s: number, i: { amount: number }) => s + i.amount, 0)
+    if (amount !== sum) return json({ error: 'amount_mismatch' }, 400)
 
     const secret = Deno.env.get('TOSS_SECRET_KEY')
     if (!secret) return json({ error: 'no_secret' }, 500)
@@ -58,10 +68,13 @@ Deno.serve(async (req) => {
     if (!r.ok || p.status !== 'DONE') return json({ error: p.message ?? p.code ?? 'confirm_failed', code: p.code }, 400)
 
     const via = p.easyPay?.provider ? `${p.easyPay.provider}(온라인)` : p.card?.issuerCode ? '카드(온라인)' : `${p.method ?? '온라인'}(온라인)`
-    await db.from('invoices').update({
-      status: 'paid', paid_amount: p.totalAmount ?? amount, paid_method: 'card', paid_at: p.approvedAt ?? new Date().toISOString(),
-      paid_via: via, payment_key: paymentKey, memo: [inv.memo, `온라인결제 ${p.orderName ?? ''}`.trim()].filter(Boolean).join(' · ')
-    }).eq('id', inv.id)
+    for (const inv of open) {
+      await db.from('invoices').update({
+        status: 'paid', paid_amount: inv.amount, paid_method: 'card', paid_at: p.approvedAt ?? new Date().toISOString(),
+        paid_via: via, payment_key: paymentKey,
+        memo: [inv.memo, `온라인결제${invs.length > 1 ? ` (${invs.length}건 함께)` : ''}`].filter(Boolean).join(' · ')
+      }).eq('id', inv.id)
+    }
     return json({ ok: true, via, receipt: p.receipt?.url ?? null })
   } catch (e) {
     return json({ error: String((e as Error)?.message ?? e) }, 500)

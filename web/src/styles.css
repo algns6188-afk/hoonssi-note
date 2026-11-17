@@ -540,3 +540,16 @@ a.btn.call { background: var(--in-soft); padding: 8px 10px; }
 .rv .rider { font-weight: 600; }
 .rv-stop.editable { cursor: pointer; }
 .rv-stop.editable:hover { background: #f7faf6; }
+
+/* ---------- 학부모: 골라서 결제 ---------- */
+.pay-all { margin: 6px 0 2px; }
+.bills li.unpaid { cursor: pointer; }
+.bills li.picked { border-color: var(--brand); background: #f5f8ff; }
+.bill-main .bill-check { width: 22px; height: 22px; flex: none; margin-right: 4px; accent-color: var(--brand); }
+.bill-main { align-items: center; gap: 8px; }
+.pay-bar { position: sticky; bottom: calc(10px + env(safe-area-inset-bottom)); display: flex; align-items: center; gap: 12px; background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 10px 12px; margin: 10px 0; box-shadow: 0 4px 14px rgba(0,0,0,.08); z-index: 4; }
+.pay-bar b { font-size: 20px; }
+.pay-bar .big { padding: 12px 18px; }
+.pay-items { display: flex; flex-direction: column; gap: 4px; font-size: 14px; }
+.pay-items li { display: flex; justify-content: space-between; gap: 8px; }
+.sheet a.btn.toss { display: block; text-align: center; margin-top: 8px; }
