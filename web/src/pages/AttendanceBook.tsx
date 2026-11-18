@@ -266,6 +266,8 @@ export function MonthlyBook({ students: all, onOpenDay }: { students: Student[];
     setMonth(`${t.getUTCFullYear()}-${String(t.getUTCMonth() + 1).padStart(2, '0')}`)
   }
 
+  const [reload, setReload] = useState(0)
+  const [cellEdit, setCellEdit] = useState<{ s: StudentFull; d: string } | null>(null)
   useEffect(() => {
     setLoaded(false)
     const end = addDays(days[days.length - 1], 1)
@@ -283,7 +285,7 @@ export function MonthlyBook({ students: all, onOpenDay }: { students: Student[];
       setAbs((b as Abs[]) ?? [])
       setLoaded(true)
     })()
-  }, [days])
+  }, [days, reload])
 
   const present = useMemo(() => {
     const m = new Map<string, Set<string>>()
@@ -359,7 +361,7 @@ export function MonthlyBook({ students: all, onOpenDay }: { students: Student[];
                   <td>{s.group_name}</td>
                   <td>{s.grade}</td>
                   {cs.map((c, i) => (
-                    <td key={days[i]} className="mcell">
+                    <td key={days[i]} className="mcell clickable" title="눌러서 이날 상태 바꾸기" onClick={() => setCellEdit({ s, d: days[i] })}>
                       {c === 'in' && <span className="mchip in">등원</span>}
                       {c === 'absent' && <span className="mchip absent" title={absent.get(`${s.id}|${days[i]}`) || '결석'}>결석</span>}
                       {c === 'off' && <span className="mchip off">-</span>}
@@ -373,7 +375,78 @@ export function MonthlyBook({ students: all, onOpenDay }: { students: Student[];
           </tbody>
         </table>
       </div>
-      <p className="muted small">초록 = 등원 · 빨강 = 결석 · 회색 - = 수업 없는 요일(학생 정보의 수업 요일 기준) · 빈칸 = 기록 없음</p>
+      <p className="muted small">초록 = 등원 · 빨강 = 결석 · 회색 - = 수업 없는 요일(학생 정보의 수업 요일 기준) · 빈칸 = 기록 없음 · <b>칸을 누르면 그날 상태를 바꿀 수 있어요</b></p>
+      {cellEdit && (
+        <DayCellSheet student={cellEdit.s} date={cellEdit.d} cur={cell(cellEdit.s, cellEdit.d)} reason={absent.get(`${cellEdit.s.id}|${cellEdit.d}`) ?? ''}
+          onClose={() => setCellEdit(null)} onDone={() => { setCellEdit(null); setReload((n) => n + 1) }} />
+      )}
+    </div>
+  )
+}
+
+/* ---------------- 월별: 한 칸(학생 × 날짜) 상태 바꾸기 ---------------- */
+
+function DayCellSheet({ student: s, date, cur, reason: oldReason, onClose, onDone }: {
+  student: StudentFull; date: string; cur: 'in' | 'absent' | 'off' | 'future' | 'miss'; reason: string; onClose(): void; onDone(): void
+}): JSX.Element {
+  const [reason, setReason] = useState(oldReason)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+  const future = date > kstToday()
+  const label = `${Number(date.slice(5, 7))}월 ${Number(date.slice(8))}일(${DOW[dowOf(date)]})`
+  const curLabel = cur === 'in' ? '등원' : cur === 'absent' ? `결석${oldReason ? ` · ${oldReason}` : ''}` : cur === 'off' ? '수업 없는 요일' : '기록 없음'
+
+  /** 지난 날짜는 학생 부(시간) 시작 시각으로 기록 (학부모 알림 없음) */
+  const inTime = (): string => {
+    if (date === kstToday()) return new Date().toISOString()
+    const t = SESSION_TIMES[s.session_no ?? 0]?.split('~')[0] ?? '15:00'
+    return `${date}T${t.padStart(5, '0')}:00+09:00`
+  }
+  const set = async (to: 'in' | 'absent' | 'none'): Promise<void> => {
+    setBusy(true); setErr(null)
+    try {
+      const { data: rows } = await supabase.from('attendance').select('id').eq('student_id', s.id).gte('at', startIso(date)).lt('at', startIso(addDays(date, 1)))
+      const ids = ((rows as { id: string }[]) ?? []).map((r) => r.id)
+      if (to !== 'in' && ids.length) {
+        const { error } = await supabase.from('attendance').delete().in('id', ids)
+        if (error) throw error
+      }
+      await supabase.from('absences').delete().eq('student_id', s.id).eq('date', date)
+      if (to === 'absent') {
+        const { error } = await supabase.from('absences').insert({ org_id: s.org_id, student_id: s.id, date, reason: reason.trim() })
+        if (error) throw error
+      }
+      if (to === 'in' && !ids.length) {
+        const { error } = await supabase.from('attendance').insert({ org_id: s.org_id, student_id: s.id, kind: 'in', at: inTime(), source: 'staff' })
+        if (error) throw error
+      }
+      onDone()
+    } catch (e) {
+      setErr('저장 실패: ' + errText(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <div className="sheet-bg" onClick={onClose}>
+      <div className="sheet" onClick={(e) => e.stopPropagation()}>
+        <div className="sheet-head"><h2>{s.name} · {label}</h2><button className="ghost" onClick={onClose}>✕</button></div>
+        <div className="form">
+          <p className="small">지금 상태: <b>{curLabel}</b></p>
+          <button className={`big cell-opt in ${cur === 'in' ? 'on' : ''}`} disabled={busy || future} onClick={() => set('in')}>✅ 등원(출석)</button>
+          {future && <p className="muted tiny">앞으로 올 날짜는 출석으로 바꿀 수 없어요. 결석(미리 알림)은 가능해요.</p>}
+          <div className="cell-absent">
+            <input placeholder="결석 사유 (비워도 돼요)" value={reason} onChange={(e) => setReason(e.target.value)} />
+            <button className={`big cell-opt absent ${cur === 'absent' ? 'on' : ''}`} disabled={busy} onClick={() => set('absent')}>🚫 결석으로</button>
+          </div>
+          <button className="big cell-opt none" disabled={busy || (cur !== 'in' && cur !== 'absent')} onClick={() => {
+            if (cur === 'in' && !window.confirm('이날 등·하원 기록을 지울까요?')) return
+            set('none')
+          }}>⬜ 기록 없음으로</button>
+          {date !== kstToday() && <p className="muted tiny">지난 날짜 출석은 그 학생 부 시작 시간으로 기록돼요. (학부모 알림은 가지 않아요)</p>}
+          {err && <div className="error">{err}</div>}
+        </div>
+      </div>
     </div>
   )
 }

@@ -597,3 +597,11 @@ a.btn.call { background: var(--in-soft); padding: 8px 10px; }
 .rs-stop-form { background: #fff; border-radius: 10px; padding: 10px; }
 .ride-name { min-width: 64px; white-space: nowrap; font-weight: 600; }
 .rv-edit { margin-top: 6px; border: 1px solid var(--line); background: #fff; border-radius: 8px; padding: 3px 10px; font-size: 12px; cursor: pointer; }
+.att-month .mcell.clickable { cursor: pointer; }
+.att-month .mcell.clickable:hover { background: #eef3ff; outline: 1px solid #b9c9f5; }
+.cell-opt { width: 100%; border-radius: 12px; font-weight: 700; }
+.cell-opt.in { background: #e8f3e1; color: #3d7a1f; border: 1px solid #b9d9a8; }
+.cell-opt.absent { background: #fde8e4; color: #c23d22; border: 1px solid #f3b8ab; }
+.cell-opt.none { background: #f1f2f4; color: #555; border: 1px solid #dcdfe4; }
+.cell-opt.on { outline: 3px solid currentColor; }
+.cell-absent { display: flex; flex-direction: column; gap: 6px; }
