@@ -659,3 +659,5 @@ a.btn.call { background: var(--in-soft); padding: 8px 10px; }
 .gps-steps code { display: inline-block; background: #fff; border: 1px solid var(--line); border-radius: 6px; padding: 2px 6px; font-size: 12px; word-break: break-all; }
 .trip-ctl { display: flex; flex-direction: column; gap: 8px; background: #f4f8f2; border: 1px solid #d8e6d3; border-radius: 12px; padding: 10px 12px; }
 .trip-ctl .row { gap: 8px; }
+.backup.due { border: 2px solid #f0b429; }
+.backup details ul { margin: 6px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }

@@ -11,6 +11,7 @@ import { StudentForm, studentLine, type StudentFull } from './StudentForm'
 import ShuttleTab, { ShuttleAreasPage } from './Shuttle'
 import { DailyBook, MonthlyBook } from './AttendanceBook'
 import { InstallBanner, InstallGuide } from '../install'
+import { downloadBackup, lastBackupDays } from '../backup'
 
 type Tab = 'today' | 'students' | 'billing' | 'shuttle' | 'timeline' | 'more'
 const APP_URL = location.origin + location.pathname
@@ -626,6 +627,8 @@ function MoreTab({ member, students, onKiosk }: { member: Member; students: Stud
         {member.role === 'admin' && <button className="wide" onClick={() => create('kiosk')}>🔑 태블릿 전용 가입 코드 만들기</button>}
       </section>
 
+      {member.role === 'admin' && <BackupSection />}
+
       {member.role === 'admin' && (
         <section className="card">
           <h3>선생님 추가</h3>
@@ -677,5 +680,44 @@ function Sheet({ title, onClose, children }: { title: string; onClose(): void; c
         {children}
       </div>
     </div>
+  )
+}
+
+/* ---------------- 전체 백업 (PC에 파일로 저장) ---------------- */
+
+function BackupSection(): JSX.Element {
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState<string | null>(null)
+  const [days, setDays] = useState(lastBackupDays())
+  const run = async (): Promise<void> => {
+    setBusy(true); setMsg('백업 준비 중…')
+    try {
+      const counts = await downloadBackup((m) => setMsg(`읽는 중 ${m}`))
+      const total = Object.values(counts).reduce((a, b) => a + b, 0)
+      setMsg(`✅ 백업 파일 2개를 받았어요 (모두 ${total.toLocaleString('ko-KR')}건). 다운로드 폴더를 확인해 주세요.`)
+      setDays(0)
+    } catch (e) {
+      setMsg('백업 실패: ' + errText(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <section className={`card backup ${days == null || days >= 7 ? 'due' : ''}`}>
+      <h3>💾 전체 데이터 백업</h3>
+      <p className="muted small">학생·보호자·출결·수납·차량표·기록 전부를 이 PC(폰)에 파일로 저장해요. 무료예요. <b>일주일에 한 번</b> 받아 두는 걸 추천해요.</p>
+      <p className="small">{days == null ? '⚠️ 이 기기에서 아직 백업한 적이 없어요.' : days === 0 ? '마지막 백업: 오늘' : `마지막 백업: ${days}일 전${days >= 7 ? ' — 백업할 때가 됐어요!' : ''}`}</p>
+      <button className="primary wide" disabled={busy} onClick={run}>{busy ? '백업 중…' : '💾 지금 백업 받기'}</button>
+      {msg && <div className={msg.startsWith('✅') ? 'notice-ok small' : msg.startsWith('백업 실패') ? 'error' : 'muted small'}>{msg}</div>}
+      <details className="small">
+        <summary>받은 파일은 어떻게 하나요?</summary>
+        <ul>
+          <li><b>강철노트_백업_날짜.json</b> — 전체 데이터(복원용). 지우지 말고 보관하세요.</li>
+          <li><b>강철노트_학생명단_날짜.csv</b> — 엑셀로 바로 열리는 학생·보호자 명단.</li>
+          <li>PC의 <b>구글 드라이브·네이버 MYBOX 폴더</b>에 넣어 두면 클라우드에도 자동으로 한 번 더 보관돼요(무료 용량 안에서).</li>
+          <li>개인정보가 들어 있으니 USB·메일로 함부로 보내지 마세요.</li>
+        </ul>
+      </details>
+    </section>
   )
 }
