@@ -256,6 +256,10 @@ export default function ShuttleTab({ students, member }: { students: Student[]; 
                     const [h, mi] = t.split(':').map(Number); const x = h * 60 + mi + m
                     return `${String(Math.floor(((x % 1440) + 1440) % 1440 / 60)).padStart(2, '0')}:${String(((x % 60) + 60) % 60).padStart(2, '0')}`
                   }
+                  // 하원 운행은 그 부 수업 끝나기 5분 전 시작
+                  const SESSION_END: Record<number, string> = { 1: '15:00', 2: '16:30', 3: '18:00', 4: '19:00', 5: '21:00', 6: '22:00' }
+                  const endT = run.kind !== 'to' && run.session_no ? SESSION_END[run.session_no] : undefined
+                  const startBase = endT && (!first || endT < first.slice(0, 5)) ? endT : first
                   const running = !!trip && !trip.ended_at
                   const tripCall = async (fn: 'trip_start' | 'trip_end'): Promise<void> => {
                     if (fn === 'trip_end' && !window.confirm(`${run.name} 운행을 끝낼까요? 학부모 화면에서 차량 위치가 사라져요.`)) return
@@ -268,7 +272,7 @@ export default function ShuttleTab({ students, member }: { students: Student[]; 
                         {running
                           ? <><b className="ok">● 운행 중</b> <span className="muted">({trip!.manual ? '직접 시작 · 직접 종료할 때까지' : `자동 · ${shift(lastT, 10)}에 자동 종료`})</span></>
                           : trip?.ended_at ? <span className="muted">운행 끝 · 위치 공유 안 함</span>
-                            : <span className="muted">자동 시작 {shift(first, -5)} · 자동 종료 {shift(lastT, 10)} (GPS 앱이 켜져 있을 때)</span>}
+                            : <span className="muted">자동 시작 {shift(startBase, -5)}{endT ? ` (${run.session_no}부 수업 끝 5분 전)` : ''} · 자동 종료 {shift(lastT, 10)} (GPS 앱이 켜져 있을 때)</span>}
                       </div>
                       <div className="row">
                         {running
