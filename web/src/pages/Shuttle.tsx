@@ -5,7 +5,7 @@ import { addressQuery, geocode, type Area } from '../mapAdapter'
 
 /* ---------------- 데이터 ---------------- */
 
-export interface Vehicle { id: string; name: string; plate: string; capacity: number; active: boolean }
+export interface Vehicle { id: string; name: string; plate: string; capacity: number; active: boolean; gps_token?: string | null; gps_last_at?: string | null }
 export interface Stop { id: string; name: string; parent_name?: string | null; address: string; wait_note: string; lat: number | null; lng: number | null; active: boolean }
 /** 정류장 이름: 학부모 화면이면 학부모용 이름(없으면 관리자 이름과 같음) */
 export const stopLabel = (s: Stop | undefined, parent?: boolean): string => (s ? (parent && s.parent_name ? s.parent_name : s.name) : '')
@@ -644,8 +644,50 @@ function VehicleSheet({ vehicle, onClose, onSaved }: { vehicle: Vehicle; onClose
         <label>정원 (아이 기준)<input inputMode="numeric" value={cap} onChange={(e) => setCap(e.target.value.replace(/\D/g, ''))} /></label>
         {err && <div className="error">{err}</div>}
         <button className="primary big" onClick={save}>저장</button>
+        <GpsAppBox vehicle={vehicle} onSaved={onSaved} />
       </div>
     </Sheet>
+  )
+}
+
+const GPS_URL = 'https://gqgeduyjicntceotatku.supabase.co/functions/v1/gps'
+
+/** 차량 GPS 앱(Traccar Client) 연결: 화면이 꺼져도 위치 전송, 시간표로 운행 자동 시작·종료 */
+function GpsAppBox({ vehicle, onSaved }: { vehicle: Vehicle; onSaved(): Promise<void> }): JSX.Element {
+  const [token, setToken] = useState(vehicle.gps_token ?? '')
+  const [msg, setMsg] = useState<string | null>(null)
+  const ready = vehicle.gps_token !== undefined     // v18 실행 여부
+  const make = async (): Promise<void> => {
+    if (token && !window.confirm('새 식별자를 만들면 지금 폰 앱에 넣은 식별자는 더 이상 안 돼요. 새로 만들까요?')) return
+    const a = new Uint8Array(12); crypto.getRandomValues(a)
+    const t = 'kc' + Array.from(a, (b) => b.toString(36).padStart(2, '0')).join('').slice(0, 18)
+    const { error } = await supabase.from('vehicles').update({ gps_token: t }).eq('id', vehicle.id)
+    if (error) return setMsg('실패: ' + errText(error))
+    setToken(t); setMsg('✅ 식별자를 만들었어요. 아래 순서대로 폰 앱에 넣어 주세요.')
+    await onSaved()
+  }
+  const copy = (t: string): void => { void navigator.clipboard?.writeText(t).then(() => setMsg('📋 복사했어요: ' + t)) }
+  const last = vehicle.gps_last_at ? Math.round((Date.now() - Date.parse(vehicle.gps_last_at)) / 60000) : null
+  if (!ready) return <p className="notice small">GPS 앱 연결은 Supabase에서 <b>schema-v18-gps-device.sql</b> 을 실행한 뒤 쓸 수 있어요.</p>
+  return (
+    <div className="gps-box">
+      <h3>📡 GPS 앱 연결 (Traccar Client)</h3>
+      <p className="muted small">폰 화면이 꺼져 있어도 위치를 보내요. 운행은 <b>시간표를 보고 자동으로 시작·종료</b>돼요. (첫 정류장 20분 전 ~ 마지막 정류장 30분 뒤)</p>
+      {last != null && <div className={`small ${last < 3 ? 'ok' : 'muted'}`}>마지막 위치 받음: {last < 1 ? '방금' : `${last}분 전`}</div>}
+      {token ? (
+        <ol className="gps-steps">
+          <li>Traccar Client → <b>설정 변경</b></li>
+          <li><b>서버 URL</b>에 넣기 <code>{GPS_URL}</code> <button className="small-btn" onClick={() => copy(GPS_URL)}>복사</button></li>
+          <li><b>기기 식별자</b>에 넣기 <code>{token}</code> <button className="small-btn" onClick={() => copy(token)}>복사</button></li>
+          <li>위치 정확도 <b>높음</b>, 간격 <b>10초</b> 정도로</li>
+          <li>휴대폰 설정 → Traccar Client → 위치 <b>"항상"</b> 허용</li>
+          <li>앱 첫 화면 <b>연속 추적</b> 켜기 (출근할 때 켜고 퇴근할 때 끄기)</li>
+        </ol>
+      ) : <p className="small">아직 연결 안 됨. 아래 버튼으로 이 차량 전용 식별자를 만드세요.</p>}
+      <button onClick={make}>{token ? '🔄 식별자 새로 만들기' : '🔑 기기 식별자 만들기'}</button>
+      {msg && <div className={msg.startsWith('실패') ? 'error' : 'notice-ok small'}>{msg}</div>}
+      <p className="muted tiny">식별자는 이 차량의 비밀번호 같은 값이에요. 다른 사람에게 알려 주지 마세요.</p>
+    </div>
   )
 }
 
