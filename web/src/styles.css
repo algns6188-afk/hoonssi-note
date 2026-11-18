@@ -616,3 +616,8 @@ a.btn.call { background: var(--in-soft); padding: 8px 10px; }
 .cell-opt.early { background: #e3f0fb; color: #1f6fb0; border: 1px solid #b3d4f0; }
 .cell-opt.sick { background: #fdf0e1; color: #b8650b; border: 1px solid #f2c899; }
 .cell-opt.trip { background: #f1eafc; color: #6b3fbf; border: 1px solid #d4c2f2; }
+.map-search input { min-width: 0; }
+.map-hits { background: #fff; border: 1px solid var(--line); border-radius: 10px; max-height: 220px; overflow: auto; }
+.map-hits li { padding: 8px 10px; border-bottom: 1px solid var(--line); cursor: pointer; }
+.map-hits li:last-child { border-bottom: 0; }
+.map-hits li:hover { background: #f2f6ff; }

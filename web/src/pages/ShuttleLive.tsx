@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { createMap, onMapFallback, roadPath, type LL, type MapAdapter, type MarkerH } from '../mapAdapter'
+import { addressQuery, createMap, geocode, onMapFallback, roadPath, type LL, type MapAdapter, type MarkerH } from '../mapAdapter'
 import { supabase, errText } from '../supabase'
 import { useI18n } from '../i18n'
 import { activeRide, describeRequest, stopLabel, type RideView, hm, loadShuttle, ridersView, stopsOn, type RideRequest, type Run, type RunStop, type ShuttleData, type Stop } from './Shuttle'
@@ -386,12 +386,25 @@ export function DriverMode({ data, run, day, place, orgId, onExit }: { data: Shu
 
 /* ---------------- 지도에서 위치 고르기 (정류장·도장) ---------------- */
 
-export function PickMap({ lat, lng, onPick }: { lat: number | null; lng: number | null; onPick(lat: number, lng: number): void }): JSX.Element {
+export interface PlaceHit { name: string; address: string; category?: string; lat: number; lng: number }
+/** 장소 이름 검색 (네이버 지역 검색, 서버 함수 place-search). 아직 설정 전이면 'unavailable' */
+export async function placeSearch(query: string): Promise<PlaceHit[] | 'unavailable'> {
+  const { data, error } = await supabase.functions.invoke('place-search', { body: { query } })
+  if (error) return 'unavailable'
+  const items = (data as { items?: PlaceHit[]; error?: string })?.items
+  return items ?? 'unavailable'
+}
+
+export function PickMap({ lat, lng, onPick, onAddress }: { lat: number | null; lng: number | null; onPick(lat: number, lng: number): void; onAddress?(address: string): void }): JSX.Element {
   const box = useRef<HTMLDivElement>(null)
   const map = useMapAdapter(box, lat != null && lng != null ? [lat, lng] : [37.318, 126.835], lat != null ? 17 : 14)
   const pin = useRef<MarkerH | null>(null)
   const cb = useRef(onPick)
   cb.current = onPick
+  const [q, setQ] = useState('')
+  const [hits, setHits] = useState<PlaceHit[] | null>(null)
+  const [searching, setSearching] = useState(false)
+  const [note, setNote] = useState<string | null>(null)
   useEffect(() => {
     if (!map) return
     map.onClick((a, b) => cb.current(a, b))
@@ -408,11 +421,47 @@ export function PickMap({ lat, lng, onPick }: { lat: number | null; lng: number 
     () => alert('현재 위치를 가져오지 못했어요. 위치 권한을 확인해 주세요.'),
     { enableHighAccuracy: true, timeout: 15000 }
   )
+  // 검색: 장소 이름(네이버 지역 검색) + 주소(네이버 Geocoding) 같이
+  const search = async (): Promise<void> => {
+    const text = q.trim()
+    if (!text) return
+    setSearching(true); setNote(null)
+    const addr = addressQuery(text, '') ?? (/[로길]\s?\d/.test(text) ? `경기도 안산시 단원구 ${text}` : null)
+    const [places, g] = await Promise.all([placeSearch(text), addr ? geocode(addr) : Promise.resolve(null)])
+    const out: PlaceHit[] = []
+    if (Array.isArray(g)) out.push({ name: `📮 ${addr}`, address: addr!, lat: g[0], lng: g[1], category: '주소' })
+    if (Array.isArray(places)) out.push(...places)
+    setHits(out)
+    if (!out.length) setNote(places === 'unavailable' ? '장소 이름 검색은 아직 설정 전이에요. 주소(예: 원곡로 28)로 검색하거나 지도에서 직접 찍어 주세요.' : '찾는 곳이 없어요. 다르게 써 보거나 지도에서 직접 찍어 주세요.')
+    setSearching(false)
+  }
+  const choose = (h: PlaceHit): void => {
+    cb.current(h.lat, h.lng)
+    map?.setView([h.lat, h.lng], 17)
+    if (onAddress && h.address && h.category !== '주소') onAddress(h.address.replace(/^경기도?\s*안산시\s*(단원구|상록구)?\s*/, ''))
+    setHits(null)
+  }
   return (
     <div className="pickmap">
+      <div className="row map-search">
+        <input className="grow" value={q} placeholder="🔍 장소·주소 검색 (예: 롯데캐슬, 원곡로 28)" onChange={(e) => setQ(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) { e.preventDefault(); search() } }} />
+        <button type="button" className="small-btn" disabled={searching} onClick={search}>{searching ? '…' : '검색'}</button>
+      </div>
+      {hits && hits.length > 0 && (
+        <ul className="plain map-hits">
+          {hits.map((h, i) => (
+            <li key={i} onClick={() => choose(h)}>
+              <b>{h.name}</b> {h.category && <span className="muted tiny">{h.category}</span>}
+              <div className="muted tiny">{h.address}</div>
+            </li>
+          ))}
+        </ul>
+      )}
+      {note && <p className="muted tiny">{note}</p>}
       <div ref={box} className="rv-map small-map" />
       <div className="row">
-        <span className="muted small grow">지도를 눌러 위치를 찍어 주세요.</span>
+        <span className="muted small grow">검색하거나 지도를 눌러 위치를 찍어 주세요.</span>
         <button type="button" className="ghost small-btn" onClick={here}>📍 지금 내 위치</button>
       </div>
     </div>

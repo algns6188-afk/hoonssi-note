@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase, errText, type Member, type Student } from '../supabase'
-import { DriverMode, PickMap, RequestSheet, RouteView, usePlace, useTrips } from './ShuttleLive'
+import { DriverMode, PickMap, placeSearch, RequestSheet, RouteView, usePlace, useTrips } from './ShuttleLive'
 import { addressQuery, geocode } from '../mapAdapter'
 
 /* ---------------- 데이터 ---------------- */
@@ -402,7 +402,7 @@ function RunStopSheet({ data, run, rs, students, member, onClose, onSaved }: {
               {!sf.same && <label>학부모용 이름<input value={sf.pname} onChange={(e) => setSf({ ...sf, pname: e.target.value })} placeholder="예: 원곡초 정문 앞 큰길" /></label>}
               <label>주소<input value={sf.address} onChange={(e) => setSf({ ...sf, address: e.target.value })} placeholder="원선로47" /></label>
               <label>대기 위치<input value={sf.wait} onChange={(e) => setSf({ ...sf, wait: e.target.value })} placeholder="예: 정문 앞 편의점 쪽" /></label>
-              <PickMap lat={sf.lat} lng={sf.lng} onPick={(a, b) => setSf((x) => ({ ...x, lat: a, lng: b }))} />
+              <PickMap lat={sf.lat} lng={sf.lng} onPick={(a, b) => setSf((x) => ({ ...x, lat: a, lng: b }))} onAddress={(ad) => setSf((x) => ({ ...x, address: x.address || ad }))} />
               <p className="muted tiny">이 정류장을 쓰는 다른 운행에도 같이 바뀌어요.</p>
               <button className="primary" onClick={saveStop}>정류장 저장</button>
             </div>
@@ -477,7 +477,17 @@ function StopsSheet({ data, member, onClose, onSaved }: { data: ShuttleData; mem
     for (let i = 0; i < todo.length; i++) {
       const st = todo[i]
       const q = addressQuery(st.address, st.name)
-      if (!q) { fails.push({ s: st, why: '주소 없음' }) } else {
+      if (!q) {
+        // 주소가 없으면 장소 이름으로 찾아보기 (이름이 거의 같은 곳만)
+        const norm = (x: string): string => x.replace(/\(.*?\)|정문|앞|건너편|건너주기|\s|[^가-힣0-9a-zA-Z]/g, '').toLowerCase()
+        const key = norm(st.name)
+        const hits = key.length >= 2 ? await placeSearch(st.name.replace(/\(.*?\)/g, '').trim()) : 'unavailable'
+        const hit = Array.isArray(hits) ? hits.find((h) => { const n = norm(h.name); return n && (n.includes(key) || key.includes(n)) && near([h.lat, h.lng]) }) : undefined
+        if (hit) {
+          const { error } = await supabase.from('stops').update({ lat: hit.lat, lng: hit.lng, address: st.address || hit.address.replace(/^경기도?\s*안산시\s*(단원구|상록구)?\s*/, '') }).eq('id', st.id)
+          if (error) fails.push({ s: st, why: errText(error) }); else ok++
+        } else fails.push({ s: st, why: Array.isArray(hits) ? '장소를 못 찾음' : '주소 없음' })
+      } else {
         const r = await geocode(q)
         if (r === 'unavailable') {
           setGeo({ done: i, total: todo.length, fails, msg: '네이버 주소 검색을 쓸 수 없어요. 네이버 클라우드 → Maps → 강철노트 Application 에서 "Geocoding" 도 체크해 주세요.' })
@@ -582,7 +592,7 @@ function StopsSheet({ data, member, onClose, onSaved }: { data: ShuttleData; mem
             <label>주소<input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="원선로47" /></label>
             <label>대기 위치<input value={wait} onChange={(e) => setWait(e.target.value)} placeholder="예: 정문 앞 편의점 쪽" /></label>
             <div className="small"><b>지도 위치</b> {lat != null ? <span className="ok">✓ 지정됨</span> : <span className="muted">없음 (학부모 지도·자동 "지남" 표시에 필요)</span>}</div>
-            <PickMap key={editing?.id ?? 'new'} lat={lat} lng={lng} onPick={(a, b) => { setLat(a); setLng(b) }} />
+            <PickMap key={editing?.id ?? 'new'} lat={lat} lng={lng} onPick={(a, b) => { setLat(a); setLng(b) }} onAddress={(ad) => setAddress((cur) => cur || ad)} />
             {err && <div className="error">{err}</div>}
             <div className="row"><button className="primary grow" onClick={save}>저장</button><button className="ghost" onClick={() => pick(null)}>취소</button></div>
             {editing?.id && (used(editing.id) === 0 ? (
