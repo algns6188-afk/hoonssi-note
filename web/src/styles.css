@@ -637,3 +637,19 @@ a.btn.call { background: var(--in-soft); padding: 8px 10px; }
 .lg-ok { background: rgba(95,191,106,.45); height: 8px !important; }
 .lg-no { background: repeating-linear-gradient(45deg, #e2553b 0 2px, transparent 2px 5px); height: 8px !important; border: 1px dashed #e2553b; }
 .area-list .item-row { gap: 6px; }
+.area-map.big { height: calc(100vh - 330px); min-height: 420px; }
+@media (min-width: 900px) {
+  .areas-page .area-editor { display: grid; grid-template-columns: 280px 1fr; gap: 14px; align-items: start; }
+  .areas-page .area-editor > .area-map { grid-column: 2; grid-row: 1 / span 6; height: calc(100vh - 170px); }
+  .areas-page .area-editor > *:not(.area-map) { grid-column: 1; }
+  .areas-page .area-modes { grid-template-columns: 1fr; }
+}
+@media (min-width: 900px) {
+  .areas-page .area-editor { grid-template-columns: 340px 1fr; }
+  .areas-page .area-drawing .row { flex-direction: column; align-items: stretch; }
+  .areas-page .area-drawing .row button { width: 100%; white-space: nowrap; }
+  .areas-page .area-list .item-row { flex-wrap: wrap; row-gap: 4px; }
+  .areas-page .area-list .item-row .grow { min-width: 160px; }
+}
+.area-list .item-row .grow b { white-space: nowrap; }
+.area-drawing .row button { white-space: nowrap; }

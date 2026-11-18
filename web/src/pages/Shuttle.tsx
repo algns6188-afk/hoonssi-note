@@ -122,7 +122,7 @@ export default function ShuttleTab({ students, member }: { students: Student[]; 
   const [day, setDay] = useState(DAYS.includes(todayDay()) ? todayDay() : '월')
   const [open, setOpen] = useState<string | null>(null)
   const [edit, setEdit] = useState<{ run: Run; rs: RunStop } | null>(null)
-  const [sheet, setSheet] = useState<'stops' | 'vehicle' | 'areas' | null>(null)
+  const [sheet, setSheet] = useState<'stops' | 'vehicle' | null>(null)
   const [q, setQ] = useState('')
   const [driving, setDriving] = useState<Run | null>(null)
   const [changing, setChanging] = useState<RideRequest | 'new' | null>(null)
@@ -181,7 +181,6 @@ export default function ShuttleTab({ students, member }: { students: Student[]; 
           {DAYS.map((d) => <button key={d} className={d === day ? 'pill on' : 'pill'} onClick={() => setDay(d)}>{d}{d === todayDay() ? ' (오늘)' : ''}</button>)}
         </div>
         <button className="ghost small-btn" onClick={() => setSheet('stops')}>📍 정류장 {data.stops.length}</button>
-        <button className="ghost small-btn" onClick={() => setSheet('areas')}>🗺 운행 구역 {data.areas.length || ''}</button>
         <button className="ghost small-btn" onClick={() => setSheet('vehicle')}>🚐 {vehicle?.name ?? '차량'}</button>
         {data.requestsOk && <button className="primary small-btn" onClick={() => setChanging('new')}>✏️ 변경 입력</button>}
       </div>
@@ -302,12 +301,6 @@ export default function ShuttleTab({ students, member }: { students: Student[]; 
       {runs.length === 0 && <p className="muted center">{day}요일 운행이 없어요.</p>}
 
       {edit && <RunStopSheet data={data} run={edit.run} rs={edit.rs} students={students} member={member} onClose={() => setEdit(null)} onSaved={load} />}
-      {sheet === 'areas' && (
-        <Sheet title="🗺 운행 구역 표시" onClose={() => setSheet(null)}>
-          {data.areasOk ? <AreaEditor data={data} place={place} orgId={member.org_id} onSaved={load} />
-            : <p className="notice">운행 구역 표시는 Supabase에서 <b>schema-v17-shuttle-areas.sql</b> 을 실행한 뒤 쓸 수 있어요.</p>}
-        </Sheet>
-      )}
       {sheet === 'stops' && <StopsSheet data={data} member={member} onClose={() => setSheet(null)} onSaved={load} />}
       {sheet === 'vehicle' && vehicle && <VehicleSheet vehicle={vehicle} onClose={() => setSheet(null)} onSaved={load} />}
     </div>
@@ -772,5 +765,21 @@ function RequestsBox({ data, requests, nameOf, reload, onEdit }: { data: Shuttle
       </ul>
       <p className="muted tiny">승인하면 차량표에 바로 반영되고, 바뀐 자리에 표시돼요. (하루 변경은 그날만, "계속"은 차량표 자체가 바뀜)</p>
     </section>
+  )
+}
+
+/* ---------------- 운행 구역 표시 (차량 > 운행 구역 소메뉴, 큰 화면) ---------------- */
+
+export function ShuttleAreasPage({ member }: { member: Member }): JSX.Element {
+  const [data, setData] = useState<ShuttleData | null>(null)
+  const place = usePlace()
+  const load = useCallback(async () => setData(await loadShuttle()), [])
+  useEffect(() => { load() }, [load])
+  if (!data) return <p className="center muted">불러오는 중…</p>
+  return (
+    <div className="page areas-page">
+      {data.areasOk ? <AreaEditor data={data} place={place} orgId={member.org_id} onSaved={load} big />
+        : <p className="notice">운행 구역 표시는 Supabase에서 <b>schema-v17-shuttle-areas.sql</b> 을 실행한 뒤 쓸 수 있어요.</p>}
+    </div>
   )
 }

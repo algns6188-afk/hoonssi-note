@@ -8,7 +8,7 @@ import KioskScreen from './Kiosk'
 import BillingTab, { StudentBillingSection, useBaseFee } from './AdminBilling'
 import AssistantBox from './Assistant'
 import { StudentForm, studentLine, type StudentFull } from './StudentForm'
-import ShuttleTab from './Shuttle'
+import ShuttleTab, { ShuttleAreasPage } from './Shuttle'
 import { DailyBook, MonthlyBook } from './AttendanceBook'
 import { InstallBanner, InstallGuide } from '../install'
 
@@ -20,6 +20,7 @@ export default function AdminApp({ member }: { member: Member }): JSX.Element {
   const [tab, setTab] = useState<Tab>('today')
   const [kiosk, setKiosk] = useState(false)
   const [att, setAtt] = useState<'today' | 'daily' | 'monthly'>('today')
+  const [shv, setShv] = useState<'table' | 'areas'>('table')
   const [dayKey, setDayKey] = useState(0) // 월별에서 날짜 눌렀을 때 일별 새로 열기
   const [openDay, setOpenDay] = useState<string | null>(null)
   const [students, setStudents] = useState<Student[]>([])
@@ -59,13 +60,13 @@ export default function AdminApp({ member }: { member: Member }): JSX.Element {
       <header className="m-head">
         <div className="logo">강</div>
         <div className="grow">
-          <div className="m-title">{tab === 'today' && att !== 'today' ? (att === 'daily' ? '일별 출석부' : '월별 출석부') : { today: '오늘 출석', students: '학생 관리', billing: '수납 관리', shuttle: '강철셔틀 · 차량표', timeline: '타임라인', more: '더보기' }[tab]}</div>
+          <div className="m-title">{tab === 'shuttle' && shv === 'areas' ? '운행 구역 표시' : tab === 'today' && att !== 'today' ? (att === 'daily' ? '일별 출석부' : '월별 출석부') : { today: '오늘 출석', students: '학생 관리', billing: '수납 관리', shuttle: '강철셔틀 · 차량표', timeline: '타임라인', more: '더보기' }[tab]}</div>
           <div className="muted small">{member.display_name} · {member.role === 'admin' ? '관리자' : '선생님'}</div>
         </div>
       </header>
 
       <InstallBanner />
-      {tab !== 'more' && <AssistantBox />}
+      {tab !== 'more' && !(tab === 'shuttle' && shv === 'areas') && <AssistantBox />}
       {tab === 'today' && (
         <div className="att-subtabs">
           {([['today', '오늘'], ['daily', '일별'], ['monthly', '월별']] as const).map(([id, label]) => (
@@ -78,7 +79,15 @@ export default function AdminApp({ member }: { member: Member }): JSX.Element {
       {tab === 'today' && att === 'monthly' && <MonthlyBook students={students} onOpenDay={(d) => { setOpenDay(d); setDayKey(dayKey + 1); setAtt('daily') }} />}
       {tab === 'students' && <StudentsTab students={students} reload={load} />}
       {tab === 'billing' && <BillingTab students={students} member={member} />}
-      {tab === 'shuttle' && <ShuttleTab students={students} member={member} />}
+      {tab === 'shuttle' && (
+        <div className="att-subtabs">
+          {([['table', '차량표'], ['areas', '운행 구역']] as const).map(([id, label]) => (
+            <button key={id} className={shv === id ? 'pill on' : 'pill'} onClick={() => setShv(id)}>{label}</button>
+          ))}
+        </div>
+      )}
+      {tab === 'shuttle' && shv === 'table' && <ShuttleTab students={students} member={member} />}
+      {tab === 'shuttle' && shv === 'areas' && <ShuttleAreasPage member={member} />}
       {tab === 'timeline' && <TimelineTab />}
       {tab === 'more' && <MoreTab member={member} students={students} onKiosk={() => setKiosk(true)} />}
 
@@ -86,9 +95,16 @@ export default function AdminApp({ member }: { member: Member }): JSX.Element {
         <div className="side-brand"><div className="logo">강</div>강철노트</div>
         {([['today', '✅', '출석'], ['students', '🥋', '학생'], ['billing', '💳', '수납'], ['shuttle', '🚐', '차량'], ['timeline', '🕒', '기록'], ['more', '⋯', '더보기']] as const).map(([id, icon, label]) => (
           <div key={id} className="tab-group">
-            <button className={tab === id ? 'on' : ''} onClick={() => { setTab(id); if (id === 'today') setAtt('today') }}>
+            <button className={tab === id ? 'on' : ''} onClick={() => { setTab(id); if (id === 'today') setAtt('today'); if (id === 'shuttle') setShv('table') }}>
               <span>{icon}</span>{label}
             </button>
+            {id === 'shuttle' && tab === 'shuttle' && (
+              <div className="subnav">
+                {([['table', '차량표'], ['areas', '운행 구역']] as const).map(([k, l]) => (
+                  <button key={k} className={shv === k ? 'on' : ''} onClick={() => setShv(k)}>{l}</button>
+                ))}
+              </div>
+            )}
             {id === 'today' && tab === 'today' && (
               <div className="subnav">
                 {([['today', '오늘'], ['daily', '일별'], ['monthly', '월별']] as const).map(([k, l]) => (

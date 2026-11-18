@@ -774,7 +774,7 @@ const dayOfDateLocal = (d: string): string => '일월화수목금토'[new Date(d
 type DrawMode = { kind: 'ok' | 'no'; shape: 'line' | 'area' }
 const MODE_LABEL = (m: DrawMode): string => `${m.kind === 'ok' ? '갈 수 있는' : '못 가는'} ${m.shape === 'line' ? '길' : '동네'}`
 
-export function AreaEditor({ data, place, orgId, onSaved }: { data: ShuttleData; place: Place | null; orgId: string; onSaved(): Promise<void> }): JSX.Element {
+export function AreaEditor({ data, place, orgId, onSaved, big }: { data: ShuttleData; place: Place | null; orgId: string; onSaved(): Promise<void>; big?: boolean }): JSX.Element {
   const box = useRef<HTMLDivElement>(null)
   const map = useMapAdapter(box, place?.lat != null && place.lng != null ? [place.lat, place.lng] : [37.318, 126.835], 16)
   const [mode, setMode] = useState<DrawMode | null>(null)
@@ -860,7 +860,7 @@ export function AreaEditor({ data, place, orgId, onSaved }: { data: ShuttleData;
         </div>
       )}
       {err && <div className="error">{err}</div>}
-      <div ref={box} className={`rv-map area-map ${mode ? 'drawing' : ''}`} />
+      <div ref={box} className={`rv-map area-map ${big ? 'big' : ''} ${mode ? 'drawing' : ''}`} />
       <div className="rv-legend">
         <span><i className="lg-ok" /> 갈 수 있음</span>
         <span><i className="lg-no" /> 못 감 (빗금)</span>
