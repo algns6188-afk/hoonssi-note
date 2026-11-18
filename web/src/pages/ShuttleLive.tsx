@@ -11,6 +11,7 @@ export interface Trip {
   lat: number | null; lng: number | null; speed: number | null; pos_at: string | null
   passed: Record<string, string>
   kid_done?: boolean   // 학부모: 우리 아이 정류장을 다 지남 → 차량 위치 안 보여 줌
+  manual?: boolean     // 관리자가 직접 시작한 운행
 }
 export interface Place { name: string; lat: number | null; lng: number | null }
 
@@ -265,19 +266,26 @@ export function DriverMode({ data, run, day, place, orgId, onExit }: { data: Shu
   const lastSend = useRef(0)
   const list = stopsOn(data, run, day)
 
-  // 운행 시작 (오늘 이미 시작했으면 이어서)
+  // 운행 시작 (직접 시작으로 기록 · 오늘 이미 시작했으면 이어서)
   useEffect(() => {
     (async () => {
       const today = kstDate()
-      const { data: ex } = await supabase.from('shuttle_trips').select('*').eq('run_id', run.id).eq('day', today).maybeSingle()
-      if (ex) {
-        const { data: up } = await supabase.from('shuttle_trips').update({ ended_at: null }).eq('id', (ex as Trip).id).select().single()
-        setTrip((up as Trip) ?? (ex as Trip))
+      const { error: e1 } = await supabase.rpc('trip_start', { p_run: run.id })
+      if (e1) {
+        // v19 전: 예전 방식
+        const { data: ex } = await supabase.from('shuttle_trips').select('*').eq('run_id', run.id).eq('day', today).maybeSingle()
+        if (ex) {
+          const { data: up } = await supabase.from('shuttle_trips').update({ ended_at: null }).eq('id', (ex as Trip).id).select().single()
+          setTrip((up as Trip) ?? (ex as Trip))
+          return
+        }
+        const { data: created, error } = await supabase.from('shuttle_trips').insert({ org_id: orgId, run_id: run.id, day: today }).select().single()
+        if (error) setErr('운행을 시작하지 못했어요: ' + errText(error))
+        else setTrip(created as Trip)
         return
       }
-      const { data: created, error } = await supabase.from('shuttle_trips').insert({ org_id: orgId, run_id: run.id, day: today }).select().single()
-      if (error) setErr('운행을 시작하지 못했어요: ' + errText(error))
-      else setTrip(created as Trip)
+      const { data: t } = await supabase.from('shuttle_trips').select('*').eq('run_id', run.id).eq('day', today).maybeSingle()
+      setTrip(t as Trip)
     })()
   }, [run.id])
 
@@ -327,7 +335,10 @@ export function DriverMode({ data, run, day, place, orgId, onExit }: { data: Shu
   }
   const end = async (): Promise<void> => {
     if (trip && !window.confirm('운행을 끝낼까요? 학부모 화면에 "운행 끝"으로 바뀌어요.')) return
-    if (trip) await supabase.from('shuttle_trips').update({ ended_at: new Date().toISOString() }).eq('id', trip.id)
+    if (trip) {
+      const { error } = await supabase.rpc('trip_end', { p_run: run.id })
+      if (error) await supabase.from('shuttle_trips').update({ ended_at: new Date().toISOString() }).eq('id', trip.id)
+    }
     onExit()
   }
 

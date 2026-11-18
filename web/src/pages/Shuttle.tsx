@@ -249,9 +249,36 @@ export default function ShuttleTab({ students, member }: { students: Student[]; 
               </div>
             {(
               <div className="live-box">
-                {isToday && liveOk && (
-                  <button className="primary wide" onClick={() => setDriving(run)}>{trip && !trip.ended_at ? '🚐 운행 화면 열기 (기사님 폰)' : '▶ 운행 시작 (기사님 폰 GPS)'}</button>
-                )}
+                {isToday && liveOk && (() => {
+                  const first = list[0]?.at_time, lastT = list.at(-1)?.at_time
+                  const shift = (t: string | undefined, m: number): string => {
+                    if (!t) return ''
+                    const [h, mi] = t.split(':').map(Number); const x = h * 60 + mi + m
+                    return `${String(Math.floor(((x % 1440) + 1440) % 1440 / 60)).padStart(2, '0')}:${String(((x % 60) + 60) % 60).padStart(2, '0')}`
+                  }
+                  const running = !!trip && !trip.ended_at
+                  const tripCall = async (fn: 'trip_start' | 'trip_end'): Promise<void> => {
+                    if (fn === 'trip_end' && !window.confirm(`${run.name} 운행을 끝낼까요? 학부모 화면에서 차량 위치가 사라져요.`)) return
+                    const { error } = await supabase.rpc(fn, { p_run: run.id })
+                    if (error) alert(/trip_(start|end)/.test(error.message) ? '직접 시작·종료는 Supabase에서 schema-v19-trip-auto-manual.sql 을 실행한 뒤 쓸 수 있어요.' : '실패: ' + errText(error))
+                  }
+                  return (
+                    <div className="trip-ctl">
+                      <div className="small">
+                        {running
+                          ? <><b className="ok">● 운행 중</b> <span className="muted">({trip!.manual ? '직접 시작 · 직접 종료할 때까지' : `자동 · ${shift(lastT, 10)}에 자동 종료`})</span></>
+                          : trip?.ended_at ? <span className="muted">운행 끝 · 위치 공유 안 함</span>
+                            : <span className="muted">자동 시작 {shift(first, -5)} · 자동 종료 {shift(lastT, 10)} (GPS 앱이 켜져 있을 때)</span>}
+                      </div>
+                      <div className="row">
+                        {running
+                          ? <button className="danger-btn grow" onClick={() => tripCall('trip_end')}>■ 운행 종료</button>
+                          : <button className="primary grow" onClick={() => tripCall('trip_start')}>▶ 지금 운행 시작</button>}
+                        <button className="ghost small-btn" onClick={() => setDriving(run)}>📱 이 폰으로 위치 보내기</button>
+                      </div>
+                    </div>
+                  )
+                })()}
                 {!liveOk && <p className="notice small">실시간 위치는 Supabase에서 <b>schema-v12-shuttle-live.sql</b> 을 실행한 뒤 쓸 수 있어요.</p>}
                 {isToday && <RouteView data={data} run={run} day={day} trip={trip} place={place} names={(id) => nameOf(id)}
                   onEditStop={(rs) => setEdit({ run, rs })} onUndo={(v, rsId) => undoException(v, rsId)} />}
@@ -672,7 +699,7 @@ function GpsAppBox({ vehicle, onSaved }: { vehicle: Vehicle; onSaved(): Promise<
   return (
     <div className="gps-box">
       <h3>📡 GPS 앱 연결 (Traccar Client)</h3>
-      <p className="muted small">폰 화면이 꺼져 있어도 위치를 보내요. 운행은 <b>시간표를 보고 자동으로 시작·종료</b>돼요. (첫 정류장 20분 전 ~ 마지막 정류장 30분 뒤)</p>
+      <p className="muted small">폰 화면이 꺼져 있어도 위치를 보내요. 운행은 <b>시간표를 보고 자동으로 시작·종료</b>돼요. (첫 정류장 5분 전 ~ 마지막 정류장 10분 뒤, 운행 시간 밖 위치는 저장·공유 안 함)</p>
       {last != null && <div className={`small ${last < 3 ? 'ok' : 'muted'}`}>마지막 위치 받음: {last < 1 ? '방금' : `${last}분 전`}</div>}
       {token ? (
         <ol className="gps-steps">
