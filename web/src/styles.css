@@ -605,3 +605,14 @@ a.btn.call { background: var(--in-soft); padding: 8px 10px; }
 .cell-opt.none { background: #f1f2f4; color: #555; border: 1px solid #dcdfe4; }
 .cell-opt.on { outline: 3px solid currentColor; }
 .cell-absent { display: flex; flex-direction: column; gap: 6px; }
+.mchip.sick { background: #e8891a; }
+.mchip.trip { background: #8a5cd6; }
+.mchip.early { background: #2f8fd6; }
+.att-sel.att-early { background: #2f8fd6; }
+.att-sel.att-sick { background: #e8891a; }
+.att-sel.att-trip { background: #8a5cd6; }
+.cell-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.cell-opt { padding: 14px 8px; font-size: 15px; }
+.cell-opt.early { background: #e3f0fb; color: #1f6fb0; border: 1px solid #b3d4f0; }
+.cell-opt.sick { background: #fdf0e1; color: #b8650b; border: 1px solid #f2c899; }
+.cell-opt.trip { background: #f1eafc; color: #6b3fbf; border: 1px solid #d4c2f2; }

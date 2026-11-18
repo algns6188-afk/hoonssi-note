@@ -11,7 +11,7 @@ export default function ParentApp({ member }: { member: Member }): JSX.Element {
   const { t } = useI18n()
   const [kids, setKids] = useState<Student[] | null>(null)
   const [records, setRecords] = useState<Attendance[]>([])
-  const [absences, setAbsences] = useState<{ student_id: string; date: string; reason: string }[]>([])
+  const [absences, setAbsences] = useState<{ student_id: string; date: string; reason: string; kind?: string }[]>([])
 
   const load = useCallback(async () => {
     const since = new Date(Date.now() - 14 * 86400_000).toISOString()
@@ -22,7 +22,7 @@ export default function ParentApp({ member }: { member: Member }): JSX.Element {
     setKids((s.data as Student[]) ?? [])
     setRecords((a.data as Attendance[]) ?? [])
     const from = new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 10)
-    const { data: ab } = await supabase.from('absences').select('student_id,date,reason').gte('date', from).order('date')
+    const { data: ab } = await supabase.from('absences').select('*').gte('date', from).order('date')
     setAbsences((ab as { student_id: string; date: string; reason: string }[]) ?? [])
   }, [])
 
@@ -72,7 +72,7 @@ export default function ParentApp({ member }: { member: Member }): JSX.Element {
   )
 }
 
-function KidCard({ kid, records, absences }: { kid: Student; records: Attendance[]; absences: { date: string; reason: string }[] }): JSX.Element {
+function KidCard({ kid, records, absences }: { kid: Student; records: Attendance[]; absences: { date: string; reason: string; kind?: string }[] }): JSX.Element {
   const { t } = useI18n()
   const start = todayStartIso()
   const today = records.filter((r) => r.at >= start)
@@ -101,7 +101,7 @@ function KidCard({ kid, records, absences }: { kid: Student; records: Attendance
       {absences.length > 0 && (
         <div className="absence-list">
           {absences.map((a) => (
-            <div key={a.date}>🚫 {t.absent} {Number(a.date.slice(5, 7))}/{Number(a.date.slice(8, 10))}{a.reason ? ` · ${a.reason}` : ''}</div>
+            <div key={a.date}>{a.kind === 'sick' ? `🤒 ${t.absSick}` : a.kind === 'trip' ? `🎒 ${t.absTrip}` : a.kind === 'early' ? `🏃 ${t.absEarly}` : `🚫 ${t.absent}`} {Number(a.date.slice(5, 7))}/{Number(a.date.slice(8, 10))}{a.reason ? ` · ${a.reason}` : ''}</div>
           ))}
         </div>
       )}

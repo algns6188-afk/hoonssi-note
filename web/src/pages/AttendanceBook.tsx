@@ -5,7 +5,11 @@ import { SESSION_TIMES, type StudentFull } from './StudentForm'
 /* 출석부: 일별 (하루 표, 상태 바로 수정) · 월별 (한 달 달력표) */
 
 interface Att { id: string; student_id: string; kind: 'in' | 'out'; at: string }
-interface Abs { student_id: string; date: string; reason: string }
+type AbsKind = 'absent' | 'sick' | 'trip' | 'early'
+interface Abs { student_id: string; date: string; reason: string; kind?: AbsKind }
+/** 결석 종류: 결석 · 병가 · 체험학습 · 조퇴(왔다가 일찍 감) */
+export const ABS_LABEL: Record<AbsKind, string> = { absent: '결석', sick: '병가', trip: '체험학습', early: '조퇴' }
+const absErr = (e: unknown): string => (/kind/.test(errText(e)) ? '병가·체험학습·조퇴는 Supabase에서 schema-v16-absence-kinds.sql 을 실행한 뒤 쓸 수 있어요.' : errText(e))
 interface Contact { student_id: string; name: string; phone: string; relation: string; sort: number }
 
 const DOW = ['일', '월', '화', '수', '목', '금', '토']
@@ -63,8 +67,9 @@ function Filters({ f, children }: { f: ReturnType<typeof useFilters>; children?:
 
 /* ---------------- 일별 ---------------- */
 
-type DayStatus = 'in' | 'out' | 'absent' | 'none'
-const ST: Record<DayStatus, string> = { in: '등원', out: '하원', absent: '결석', none: '상태없음' }
+type DayStatus = 'in' | 'out' | 'early' | 'absent' | 'sick' | 'trip' | 'none'
+const ST: Record<DayStatus, string> = { in: '등원', out: '하원', early: '조퇴', absent: '결석', sick: '병가', trip: '체험학습', none: '상태없음' }
+const isAbsType = (k: DayStatus): k is 'absent' | 'sick' | 'trip' => k === 'absent' || k === 'sick' || k === 'trip'
 
 export function DailyBook({ students: all, initialDate }: { students: Student[]; initialDate?: string }): JSX.Element {
   const students = (all as StudentFull[]).filter((s) => s.active)
@@ -81,7 +86,7 @@ export function DailyBook({ students: all, initialDate }: { students: Student[];
   const load = useCallback(async () => {
     const [a, b] = await Promise.all([
       supabase.from('attendance').select('id,student_id,kind,at').gte('at', startIso(date)).lt('at', startIso(addDays(date, 1))).order('at'),
-      supabase.from('absences').select('student_id,date,reason').eq('date', date)
+      supabase.from('absences').select('*').eq('date', date)
     ])
     setAtt((a.data as Att[]) ?? [])
     setAbs((b.data as Abs[]) ?? [])
@@ -105,8 +110,9 @@ export function DailyBook({ students: all, initialDate }: { students: Student[];
     const lastOut = [...rs].reverse().find((r) => r.kind === 'out')
     const lastIn = [...rs].reverse().find((r) => r.kind === 'in')
     const ab = abs.find((x) => x.student_id === s.id)
+    if (ab?.kind === 'early') return { st: 'early', inAt: firstIn?.at, outAt: lastOut?.at, reason: ab.reason }
     if (firstIn) return { st: lastOut && (!lastIn || lastOut.at > lastIn.at) ? 'out' : 'in', inAt: firstIn.at, outAt: lastOut?.at }
-    if (ab) return { st: 'absent', reason: ab.reason }
+    if (ab) return { st: ab.kind ?? 'absent', reason: ab.reason }
     return { st: 'none' }
   }
 
@@ -134,38 +140,40 @@ export function DailyBook({ students: all, initialDate }: { students: Student[];
     const cur = info(s)
     if (to === cur.st) return
     let reason = ''
-    if (to === 'absent') {
-      const r = window.prompt(`${s.name} ${date.slice(5).replace('-', '/')} 결석 사유 (비워도 돼요)`, '')
+    if (isAbsType(to) || to === 'early') {
+      const r = window.prompt(`${s.name} ${date.slice(5).replace('-', '/')} ${ST[to]} 사유 (비워도 돼요)`, '')
       if (r === null) return
       reason = r
     }
-    if ((to === 'absent' || to === 'none') && (cur.st === 'in' || cur.st === 'out') &&
-      !window.confirm(`${s.name}의 이날 등·하원 기록을 지울까요?`)) return
-    setBusy(s.id)
     const mine = att.filter((r) => r.student_id === s.id)
+    if ((isAbsType(to) || to === 'none') && mine.length && !window.confirm(`${s.name}의 이날 등·하원 기록을 지울까요?`)) return
+    setBusy(s.id)
+    const hadAbs = abs.some((x) => x.student_id === s.id)
     const ops: PromiseLike<{ error: unknown }>[] = []
-    if (to === 'absent' || to === 'none') {
+    if (hadAbs) ops.push(supabase.from('absences').delete().eq('student_id', s.id).eq('date', date))
+    if (isAbsType(to) || to === 'none') {
       if (mine.length) ops.push(supabase.from('attendance').delete().in('id', mine.map((r) => r.id)))
-      if (cur.st === 'absent') ops.push(supabase.from('absences').delete().eq('student_id', s.id).eq('date', date))
-      if (to === 'absent') ops.push(supabase.from('absences').insert({ org_id: s.org_id, student_id: s.id, date, reason }))
+      if (isAbsType(to)) ops.push(supabase.from('absences').insert({ org_id: s.org_id, student_id: s.id, date, reason, kind: to }))
+    } else if (to === 'early') {
+      // 조퇴: 등원 기록 + 하원 기록(일찍) + 조퇴 표시
+      const rows: object[] = []
+      if (!mine.some((r) => r.kind === 'in')) rows.push({ org_id: s.org_id, student_id: s.id, kind: 'in', at: timeFor(s, 'in'), source: 'staff' })
+      if (!mine.some((r) => r.kind === 'out')) rows.push({ org_id: s.org_id, student_id: s.id, kind: 'out', at: isToday ? new Date().toISOString() : timeFor(s, 'out'), source: 'staff' })
+      if (rows.length) ops.push(supabase.from('attendance').insert(rows))
+      ops.push(supabase.from('absences').insert({ org_id: s.org_id, student_id: s.id, date, reason, kind: 'early' }))
+    } else if (to === 'in') {
+      if (mine.some((r) => r.kind === 'out')) ops.push(supabase.from('attendance').delete().in('id', mine.filter((r) => r.kind === 'out').map((r) => r.id)))
+      if (!mine.some((r) => r.kind === 'in')) ops.push(supabase.from('attendance').insert({ org_id: s.org_id, student_id: s.id, kind: 'in', at: timeFor(s, 'in'), source: 'staff' }))
     } else {
-      if (cur.st === 'absent') ops.push(supabase.from('absences').delete().eq('student_id', s.id).eq('date', date))
-      if (to === 'in') {
-        if (cur.st === 'out') {
-          const outs = mine.filter((r) => r.kind === 'out')
-          ops.push(supabase.from('attendance').delete().in('id', outs.map((r) => r.id)))
-        } else ops.push(supabase.from('attendance').insert({ org_id: s.org_id, student_id: s.id, kind: 'in', at: timeFor(s, 'in'), source: 'staff' }))
-      } else {
-        const rows: object[] = []
-        if (cur.st !== 'in') rows.push({ org_id: s.org_id, student_id: s.id, kind: 'in', at: timeFor(s, 'in'), source: 'staff' })
-        rows.push({ org_id: s.org_id, student_id: s.id, kind: 'out', at: timeFor(s, 'out'), source: 'staff' })
-        ops.push(supabase.from('attendance').insert(rows))
-      }
+      const rows: object[] = []
+      if (!mine.some((r) => r.kind === 'in')) rows.push({ org_id: s.org_id, student_id: s.id, kind: 'in', at: timeFor(s, 'in'), source: 'staff' })
+      if (!mine.some((r) => r.kind === 'out') || cur.st === 'in') rows.push({ org_id: s.org_id, student_id: s.id, kind: 'out', at: timeFor(s, 'out'), source: 'staff' })
+      if (rows.length) ops.push(supabase.from('attendance').insert(rows))
     }
     // 순서대로 (삭제 → 추가)
     for (const op of ops) {
       const { error } = await op
-      if (error) { alert('저장 실패: ' + errText(error)); break }
+      if (error) { alert('저장 실패: ' + absErr(error)); break }
     }
     setBusy(null)
     load()
@@ -192,7 +200,10 @@ export function DailyBook({ students: all, initialDate }: { students: Student[];
       <div className="att-summary">
         <span>등원 <b className="ok">{count('in')}</b></span>
         <span>하원 <b>{count('out')}</b></span>
+        <span>조퇴 <b>{count('early')}</b></span>
         <span>결석 <b className="danger">{count('absent')}</b></span>
+        <span>병가 <b>{count('sick')}</b></span>
+        <span>체험학습 <b>{count('trip')}</b></span>
         <span>상태없음 <b>{count('none')}</b></span>
       </div>
       <Filters f={f}>
@@ -247,6 +258,8 @@ export function DailyBook({ students: all, initialDate }: { students: Student[];
 
 /* ---------------- 월별 ---------------- */
 
+type Cell = 'in' | AbsKind | 'off' | 'future' | 'miss'
+
 export function MonthlyBook({ students: all, onOpenDay }: { students: Student[]; onOpenDay(d: string): void }): JSX.Element {
   const students = (all as StudentFull[]).filter((s) => s.active)
   const [month, setMonth] = useState(kstToday().slice(0, 7))
@@ -280,7 +293,7 @@ export function MonthlyBook({ students: all, onOpenDay }: { students: Student[];
         rows.push(...((data as Att[]) ?? []))
         if (!data || data.length < 1000) break
       }
-      const { data: b } = await supabase.from('absences').select('student_id,date,reason').gte('date', days[0]).lt('date', end)
+      const { data: b } = await supabase.from('absences').select('*').gte('date', days[0]).lt('date', end)
       setAtt(rows)
       setAbs((b as Abs[]) ?? [])
       setLoaded(true)
@@ -296,13 +309,15 @@ export function MonthlyBook({ students: all, onOpenDay }: { students: Student[];
     }
     return m
   }, [att])
-  const absent = useMemo(() => new Map(abs.map((a) => [`${a.student_id}|${a.date}`, a.reason])), [abs])
+  const absent = useMemo(() => new Map(abs.map((a) => [`${a.student_id}|${a.date}`, a])), [abs])
   const today = kstToday()
 
   const rows = students.filter(f.pass).sort((a, b) => a.name.localeCompare(b.name, 'ko'))
-  const cell = (s: StudentFull, d: string): 'in' | 'absent' | 'off' | 'future' | 'miss' => {
+  const cell = (s: StudentFull, d: string): Cell => {
+    const ab = absent.get(`${s.id}|${d}`)
+    if (ab?.kind === 'early') return 'early'
     if (present.get(s.id)?.has(d)) return 'in'
-    if (absent.has(`${s.id}|${d}`)) return 'absent'
+    if (ab) return ab.kind ?? 'absent'
     if (!attendsOn(s, d)) return 'off'
     if (d > today) return 'future'
     return 'miss'
@@ -310,11 +325,11 @@ export function MonthlyBook({ students: all, onOpenDay }: { students: Student[];
   const dayTotal = (d: string): number => rows.filter((s) => present.get(s.id)?.has(d)).length
 
   const exportCsv = (): void => downloadCsv(`강철노트_월별출석부_${month}.csv`, [
-    ['반', '이름', '학년', '부', ...days.map((d) => `${Number(d.slice(8))}(${DOW[dowOf(d)]})`), '출석', '결석'],
+    ['반', '이름', '학년', '부', ...days.map((d) => `${Number(d.slice(8))}(${DOW[dowOf(d)]})`), '출석', '결석', '병가', '체험학습', '조퇴'],
     ...rows.map((s) => {
       const cs = days.map((d) => cell(s, d))
-      return [s.group_name, s.name, s.grade ?? '', sessionName(s), ...cs.map((c) => (c === 'in' ? '등원' : c === 'absent' ? '결석' : c === 'off' ? '-' : '')),
-        cs.filter((c) => c === 'in').length, cs.filter((c) => c === 'absent').length]
+      return [s.group_name, s.name, s.grade ?? '', sessionName(s), ...cs.map((c) => (c === 'in' ? '등원' : c === 'off' ? '-' : c in ABS_LABEL ? ABS_LABEL[c as AbsKind] : '')),
+        cs.filter((c) => c === 'in' || c === 'early').length, cs.filter((c) => c === 'absent').length, cs.filter((c) => c === 'sick').length, cs.filter((c) => c === 'trip').length, cs.filter((c) => c === 'early').length]
     })
   ])
 
@@ -344,12 +359,12 @@ export function MonthlyBook({ students: all, onOpenDay }: { students: Student[];
                   </th>
                 )
               })}
-              <th>출석</th><th>결석</th>
+              <th>출석</th><th>결석</th><th>병가</th><th>체험</th><th>조퇴</th>
             </tr>
             <tr className="bt-total">
               <td className="sticky-col">합계</td><td /><td />
               {days.map((d) => <td key={d}>{dayTotal(d) || ''}</td>)}
-              <td>{rows.reduce((n, s) => n + (present.get(s.id)?.size ?? 0), 0)}</td><td />
+              <td>{rows.reduce((n, s) => n + (present.get(s.id)?.size ?? 0), 0)}</td><td /><td /><td /><td />
             </tr>
           </thead>
           <tbody>
@@ -363,21 +378,24 @@ export function MonthlyBook({ students: all, onOpenDay }: { students: Student[];
                   {cs.map((c, i) => (
                     <td key={days[i]} className="mcell clickable" title="눌러서 이날 상태 바꾸기" onClick={() => setCellEdit({ s, d: days[i] })}>
                       {c === 'in' && <span className="mchip in">등원</span>}
-                      {c === 'absent' && <span className="mchip absent" title={absent.get(`${s.id}|${days[i]}`) || '결석'}>결석</span>}
+                      {c in ABS_LABEL && <span className={`mchip ${c}`} title={absent.get(`${s.id}|${days[i]}`)?.reason || ABS_LABEL[c as AbsKind]}>{c === 'trip' ? '체험' : ABS_LABEL[c as AbsKind]}</span>}
                       {c === 'off' && <span className="mchip off">-</span>}
                     </td>
                   ))}
-                  <td><b>{cs.filter((c) => c === 'in').length}</b></td>
+                  <td><b>{cs.filter((c) => c === 'in' || c === 'early').length}</b></td>
                   <td className="danger">{cs.filter((c) => c === 'absent').length || ''}</td>
+                  <td>{cs.filter((c) => c === 'sick').length || ''}</td>
+                  <td>{cs.filter((c) => c === 'trip').length || ''}</td>
+                  <td>{cs.filter((c) => c === 'early').length || ''}</td>
                 </tr>
               )
             })}
           </tbody>
         </table>
       </div>
-      <p className="muted small">초록 = 등원 · 빨강 = 결석 · 회색 - = 수업 없는 요일(학생 정보의 수업 요일 기준) · 빈칸 = 기록 없음 · <b>칸을 누르면 그날 상태를 바꿀 수 있어요</b></p>
+      <p className="muted small">초록 = 등원 · 빨강 = 결석 · 주황 = 병가 · 보라 = 체험학습 · 파랑 = 조퇴 · 회색 - = 수업 없는 요일(학생 정보의 수업 요일 기준) · 빈칸 = 기록 없음 · <b>칸을 누르면 그날 상태를 바꿀 수 있어요</b></p>
       {cellEdit && (
-        <DayCellSheet student={cellEdit.s} date={cellEdit.d} cur={cell(cellEdit.s, cellEdit.d)} reason={absent.get(`${cellEdit.s.id}|${cellEdit.d}`) ?? ''}
+        <DayCellSheet student={cellEdit.s} date={cellEdit.d} cur={cell(cellEdit.s, cellEdit.d)} reason={absent.get(`${cellEdit.s.id}|${cellEdit.d}`)?.reason ?? ''}
           onClose={() => setCellEdit(null)} onDone={() => { setCellEdit(null); setReload((n) => n + 1) }} />
       )}
     </div>
@@ -387,63 +405,79 @@ export function MonthlyBook({ students: all, onOpenDay }: { students: Student[];
 /* ---------------- 월별: 한 칸(학생 × 날짜) 상태 바꾸기 ---------------- */
 
 function DayCellSheet({ student: s, date, cur, reason: oldReason, onClose, onDone }: {
-  student: StudentFull; date: string; cur: 'in' | 'absent' | 'off' | 'future' | 'miss'; reason: string; onClose(): void; onDone(): void
+  student: StudentFull; date: string; cur: Cell; reason: string; onClose(): void; onDone(): void
 }): JSX.Element {
   const [reason, setReason] = useState(oldReason)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const future = date > kstToday()
   const label = `${Number(date.slice(5, 7))}월 ${Number(date.slice(8))}일(${DOW[dowOf(date)]})`
-  const curLabel = cur === 'in' ? '등원' : cur === 'absent' ? `결석${oldReason ? ` · ${oldReason}` : ''}` : cur === 'off' ? '수업 없는 요일' : '기록 없음'
+  const curLabel = cur === 'in' ? '등원' : cur in ABS_LABEL ? `${ABS_LABEL[cur as AbsKind]}${oldReason ? ` · ${oldReason}` : ''}` : cur === 'off' ? '수업 없는 요일' : '기록 없음'
 
-  /** 지난 날짜는 학생 부(시간) 시작 시각으로 기록 (학부모 알림 없음) */
-  const inTime = (): string => {
-    if (date === kstToday()) return new Date().toISOString()
-    const t = SESSION_TIMES[s.session_no ?? 0]?.split('~')[0] ?? '15:00'
+  /** 지난 날짜는 학생 부(시간) 시작·끝 시각으로 기록 (학부모 알림 없음) */
+  const timeOf = (k: 'in' | 'out'): string => {
+    if (date === kstToday() && k === 'in') return new Date().toISOString()
+    if (date === kstToday() && k === 'out') return new Date().toISOString()
+    const t = SESSION_TIMES[s.session_no ?? 0]?.split('~')[k === 'in' ? 0 : 1] ?? (k === 'in' ? '15:00' : '16:00')
     return `${date}T${t.padStart(5, '0')}:00+09:00`
   }
-  const set = async (to: 'in' | 'absent' | 'none'): Promise<void> => {
+  const set = async (to: 'in' | AbsKind | 'none'): Promise<void> => {
     setBusy(true); setErr(null)
     try {
-      const { data: rows } = await supabase.from('attendance').select('id').eq('student_id', s.id).gte('at', startIso(date)).lt('at', startIso(addDays(date, 1)))
-      const ids = ((rows as { id: string }[]) ?? []).map((r) => r.id)
-      if (to !== 'in' && ids.length) {
-        const { error } = await supabase.from('attendance').delete().in('id', ids)
-        if (error) throw error
-      }
+      const { data: rows } = await supabase.from('attendance').select('id,kind').eq('student_id', s.id).gte('at', startIso(date)).lt('at', startIso(addDays(date, 1)))
+      const list = (rows as { id: string; kind: 'in' | 'out' }[]) ?? []
       await supabase.from('absences').delete().eq('student_id', s.id).eq('date', date)
-      if (to === 'absent') {
-        const { error } = await supabase.from('absences').insert({ org_id: s.org_id, student_id: s.id, date, reason: reason.trim() })
-        if (error) throw error
+      if (to === 'absent' || to === 'sick' || to === 'trip' || to === 'none') {
+        if (list.length) {
+          const { error } = await supabase.from('attendance').delete().in('id', list.map((r) => r.id))
+          if (error) throw error
+        }
       }
-      if (to === 'in' && !ids.length) {
-        const { error } = await supabase.from('attendance').insert({ org_id: s.org_id, student_id: s.id, kind: 'in', at: inTime(), source: 'staff' })
+      if (to === 'in' || to === 'early') {
+        const add: object[] = []
+        if (!list.some((r) => r.kind === 'in')) add.push({ org_id: s.org_id, student_id: s.id, kind: 'in', at: timeOf('in'), source: 'staff' })
+        if (to === 'early' && !list.some((r) => r.kind === 'out')) add.push({ org_id: s.org_id, student_id: s.id, kind: 'out', at: timeOf('out'), source: 'staff' })
+        if (add.length) {
+          const { error } = await supabase.from('attendance').insert(add)
+          if (error) throw error
+        }
+      }
+      if (to !== 'in' && to !== 'none') {
+        const { error } = await supabase.from('absences').insert({ org_id: s.org_id, student_id: s.id, date, reason: reason.trim(), kind: to })
         if (error) throw error
       }
       onDone()
     } catch (e) {
-      setErr('저장 실패: ' + errText(e))
+      setErr('저장 실패: ' + absErr(e))
     } finally {
       setBusy(false)
     }
   }
+  const opt = (k: 'in' | AbsKind, icon: string, text: string, disabled = false): JSX.Element => (
+    <button className={`cell-opt ${k} ${cur === k ? 'on' : ''}`} disabled={busy || disabled} onClick={() => set(k)}>{icon} {text}</button>
+  )
   return (
     <div className="sheet-bg" onClick={onClose}>
       <div className="sheet" onClick={(e) => e.stopPropagation()}>
         <div className="sheet-head"><h2>{s.name} · {label}</h2><button className="ghost" onClick={onClose}>✕</button></div>
         <div className="form">
           <p className="small">지금 상태: <b>{curLabel}</b></p>
-          <button className={`big cell-opt in ${cur === 'in' ? 'on' : ''}`} disabled={busy || future} onClick={() => set('in')}>✅ 등원(출석)</button>
-          {future && <p className="muted tiny">앞으로 올 날짜는 출석으로 바꿀 수 없어요. 결석(미리 알림)은 가능해요.</p>}
-          <div className="cell-absent">
-            <input placeholder="결석 사유 (비워도 돼요)" value={reason} onChange={(e) => setReason(e.target.value)} />
-            <button className={`big cell-opt absent ${cur === 'absent' ? 'on' : ''}`} disabled={busy} onClick={() => set('absent')}>🚫 결석으로</button>
+          <label>사유 <span className="hint">(먼저 적고 아래 상태를 누르세요, 비워도 돼요)</span>
+            <input placeholder="예: 감기, 가족여행, 병원" value={reason} onChange={(e) => setReason(e.target.value)} />
+          </label>
+          <div className="cell-grid">
+            {opt('in', '✅', '등원(출석)', future)}
+            {opt('early', '🏃', '조퇴', future)}
+            {opt('absent', '🚫', '결석')}
+            {opt('sick', '🤒', '병가')}
+            {opt('trip', '🎒', '체험학습')}
+            <button className="cell-opt none" disabled={busy || cur === 'off' || cur === 'miss' || cur === 'future'} onClick={() => {
+              if ((cur === 'in' || cur === 'early') && !window.confirm('이날 등·하원 기록을 지울까요?')) return
+              set('none')
+            }}>⬜ 기록 없음</button>
           </div>
-          <button className="big cell-opt none" disabled={busy || (cur !== 'in' && cur !== 'absent')} onClick={() => {
-            if (cur === 'in' && !window.confirm('이날 등·하원 기록을 지울까요?')) return
-            set('none')
-          }}>⬜ 기록 없음으로</button>
-          {date !== kstToday() && <p className="muted tiny">지난 날짜 출석은 그 학생 부 시작 시간으로 기록돼요. (학부모 알림은 가지 않아요)</p>}
+          {future && <p className="muted tiny">앞으로 올 날짜는 등원·조퇴로 바꿀 수 없어요. 결석·병가·체험학습(미리 알림)은 가능해요.</p>}
+          {date !== kstToday() && <p className="muted tiny">지난 날짜 등원은 그 학생 부 시간으로 기록돼요. (학부모 알림은 가지 않아요)</p>}
           {err && <div className="error">{err}</div>}
         </div>
       </div>

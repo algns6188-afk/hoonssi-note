@@ -34,8 +34,11 @@ export default function AdminApp({ member }: { member: Member }): JSX.Element {
     setStudents((s.data as Student[]) ?? [])
     setToday((a.data as Attendance[]) ?? [])
     const kst = new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 10)
-    const { data: ab } = await supabase.from('absences').select('student_id,reason').eq('date', kst)
-    setAbsent(Object.fromEntries(((ab as { student_id: string; reason: string }[]) ?? []).map((x) => [x.student_id, x.reason])))
+    const { data: ab } = await supabase.from('absences').select('*').eq('date', kst)
+    const LBL: Record<string, string> = { absent: '결석', sick: '병가', trip: '체험학습', early: '조퇴' }
+    setAbsent(Object.fromEntries(((ab as { student_id: string; reason: string; kind?: string }[]) ?? [])
+      .filter((x) => x.kind !== 'early')   // 조퇴는 온 학생이라 결석 칸에 안 넣음
+      .map((x) => [x.student_id, `${LBL[x.kind ?? 'absent'] ?? '결석'}${x.reason ? ` · ${x.reason}` : ''}`])))
   }, [])
 
   useEffect(() => {
@@ -155,7 +158,7 @@ function TodayTab({ students, today, absent, onKiosk }: { students: Student[]; t
                   <b>{s.name}</b> <span className="muted small">{s.group_name} · {s.code}</span>
                 </span>
                 {st.s === 'none' && s.id in absent ? (
-                  <span className="status absent" title={absent[s.id]}>결석{absent[s.id] ? ` · ${absent[s.id]}` : ''}</span>
+                  <span className="status absent" title={absent[s.id]}>{absent[s.id] || '결석'}</span>
                 ) : (
                   <span className={`status ${st.s}`}>
                     {st.s === 'none' ? '미등원' : st.s === 'in' ? `등원 ${hhmm(st.inAt!)}` : `하원 ${hhmm(st.outAt!)}`}
