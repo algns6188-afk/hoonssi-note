@@ -14,7 +14,8 @@ export interface MapAdapter {
   setView(ll: LL, zoom: number): void
   fit(lls: LL[]): void
   marker(ll: LL, html: string, size: number, title?: string, z?: number, anchor?: [number, number]): MarkerH
-  polyline(lls: LL[], o: { color: string; weight: number; dashed?: boolean }): LineH
+  polyline(lls: LL[], o: { color: string; weight: number; dashed?: boolean; opacity?: number }): LineH
+  polygon(lls: LL[], o: { fill: string; fillOpacity: number; stroke: string; weight: number; dashed?: boolean; strokeOpacity?: number }): LineH
   onClick(cb: (lat: number, lng: number) => void): void
   destroy(): void
 }
@@ -66,8 +67,12 @@ function naverMap(el: HTMLElement, center: LL, zoom: number): MapAdapter {
       return { setPos: (p) => m.setPosition(P(p)), remove: () => m.setMap(null) }
     },
     polyline: (lls, o) => {
-      const l = new N.Polyline({ map, path: lls.map(P), strokeColor: o.color, strokeWeight: o.weight, strokeOpacity: 1, strokeStyle: o.dashed ? 'shortdash' : 'solid', strokeLineCap: 'round', strokeLineJoin: 'round' })
+      const l = new N.Polyline({ map, path: lls.map(P), strokeColor: o.color, strokeWeight: o.weight, strokeOpacity: o.opacity ?? 1, strokeStyle: o.dashed ? 'shortdash' : 'solid', strokeLineCap: 'round', strokeLineJoin: 'round' })
       return { setPath: (p) => l.setPath(p.map(P)), remove: () => l.setMap(null) }
+    },
+    polygon: (lls, o) => {
+      const g = new N.Polygon({ map, paths: [lls.map(P)], fillColor: o.fill, fillOpacity: o.fillOpacity, strokeColor: o.stroke, strokeWeight: o.weight, strokeOpacity: o.strokeOpacity ?? 0.8, strokeStyle: o.dashed ? 'shortdash' : 'solid', clickable: false })
+      return { setPath: (p) => g.setPaths([p.map(P)]), remove: () => g.setMap(null) }
     },
     onClick: (cb) => { N.Event.addListener(map, 'click', (e: any) => cb(e.coord.lat(), e.coord.lng())) },
     destroy: () => { try { map.destroy() } catch { /* 없음 */ } }
@@ -87,8 +92,12 @@ function osmMap(el: HTMLElement, center: LL, zoom: number): MapAdapter {
       return { setPos: (p) => m.setLatLng(p), remove: () => m.remove() }
     },
     polyline: (lls, o) => {
-      const l = L.polyline(lls, { color: o.color, weight: o.weight, dashArray: o.dashed ? '8 8' : undefined }).addTo(map)
+      const l = L.polyline(lls, { color: o.color, weight: o.weight, opacity: o.opacity ?? 1, dashArray: o.dashed ? '8 8' : undefined, interactive: false }).addTo(map)
       return { setPath: (p) => l.setLatLngs(p), remove: () => l.remove() }
+    },
+    polygon: (lls, o) => {
+      const g = L.polygon(lls, { fillColor: o.fill, fillOpacity: o.fillOpacity, color: o.stroke, weight: o.weight, opacity: o.strokeOpacity ?? 0.8, dashArray: o.dashed ? '6 6' : undefined, interactive: false }).addTo(map)
+      return { setPath: (p) => g.setLatLngs(p), remove: () => g.remove() }
     },
     onClick: (cb) => { map.on('click', (e: L.LeafletMouseEvent) => cb(e.latlng.lat, e.latlng.lng)) },
     destroy: () => map.remove()
@@ -166,4 +175,51 @@ export async function roadPath(points: LL[]): Promise<{ path: LL[]; idx: number[
   } catch {
     return null
   }
+}
+
+/** 영역 안을 채우는 빗금(대각선) 선분들. spacing 은 대략 미터 */
+export function hatchLines(poly: LL[], spacingM = 18): LL[][] {
+  if (poly.length < 3) return []
+  const lat0 = poly[0][0]
+  const kx = Math.cos((lat0 * Math.PI) / 180) * 111320, ky = 110540   // 위경도 → 미터
+  const pts = poly.map(([la, ln]) => [ln * kx, la * ky] as [number, number])
+  const cs = pts.map(([x, y]) => y - x)
+  const lo = Math.min(...cs), hi = Math.max(...cs)
+  const out: LL[][] = []
+  const step = Math.max(spacingM, (hi - lo) / 120)                     // 너무 많지 않게
+  for (let c = lo + step / 2; c < hi; c += step) {
+    const xs: number[] = []
+    for (let i = 0; i < pts.length; i++) {
+      const [x1, y1] = pts[i], [x2, y2] = pts[(i + 1) % pts.length]
+      const f1 = y1 - x1 - c, f2 = y2 - x2 - c
+      if ((f1 < 0) !== (f2 < 0)) { const t = f1 / (f1 - f2); xs.push(x1 + t * (x2 - x1)) }
+    }
+    xs.sort((a, b) => a - b)
+    for (let i = 0; i + 1 < xs.length; i += 2) {
+      const a = xs[i], b = xs[i + 1]
+      out.push([[(a + c) / ky, a / kx], [(b + c) / ky, b / kx]])
+    }
+  }
+  return out
+}
+
+export interface Area { id: string; name: string; kind: 'ok' | 'no'; shape: 'line' | 'area'; points: LL[]; show_parents: boolean }
+/** 운행 구역 그리기: 갈 수 있음 = 연초록 반투명, 못 감 = 빨간 빗금 + 점선 */
+export function drawArea(map: MapAdapter, a: Area): { remove(): void }[] {
+  const made: { remove(): void }[] = []
+  if (a.points.length < 2) return made
+  if (a.shape === 'line') {
+    if (a.kind === 'ok') made.push(map.polyline(a.points, { color: '#5fbf6a', weight: 9, opacity: 0.4 }))
+    else {
+      made.push(map.polyline(a.points, { color: '#e2553b', weight: 7, opacity: 0.25 }))
+      made.push(map.polyline(a.points, { color: '#e2553b', weight: 3, opacity: 0.9, dashed: true }))
+    }
+  } else if (a.points.length >= 3) {
+    if (a.kind === 'ok') made.push(map.polygon(a.points, { fill: '#8fd694', fillOpacity: 0.18, stroke: '#5fae64', weight: 2, strokeOpacity: 0.55 }))
+    else {
+      made.push(map.polygon(a.points, { fill: '#e2553b', fillOpacity: 0.05, stroke: '#e2553b', weight: 2, dashed: true, strokeOpacity: 0.85 }))
+      for (const seg of hatchLines(a.points)) made.push(map.polyline(seg, { color: '#e2553b', weight: 1.5, opacity: 0.45 }))
+    }
+  }
+  return made
 }

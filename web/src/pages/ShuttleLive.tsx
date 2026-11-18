@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { addressQuery, createMap, geocode, onMapFallback, type LL, type MapAdapter, type MarkerH } from '../mapAdapter'
+import { addressQuery, createMap, drawArea, geocode, onMapFallback, type Area, type LL, type MapAdapter, type MarkerH } from '../mapAdapter'
 import { supabase, errText } from '../supabase'
 import { useI18n } from '../i18n'
 import { activeRide, describeRequest, stopLabel, type RideView, hm, loadShuttle, ridersView, stopsOn, type RideRequest, type Run, type RunStop, type ShuttleData, type Stop } from './Shuttle'
@@ -169,7 +169,7 @@ export function RouteView({ data, run, day, trip, place, names, mineOnly, onEdit
 const pinHtml = (n: number | string, cls: string): string => `<div class="map-pin ${cls}">${n}</div>`
 
 /** 지도 하나 만들고(네이버 → 안 되면 OSM), 네이버 인증이 늦게 실패하면 다시 만듦 */
-function useMapAdapter(box: React.RefObject<HTMLDivElement>, center: LL, zoom: number): MapAdapter | null {
+export function useMapAdapter(box: React.RefObject<HTMLDivElement>, center: LL, zoom: number): MapAdapter | null {
   const [m, setM] = useState<MapAdapter | null>(null)
   const [ver, setVer] = useState(0)
   useEffect(() => onMapFallback(() => setVer((v) => v + 1)), [])
@@ -230,6 +230,12 @@ function RouteMap({ data, run, list, trip, place, mineIds, parent }: {
   }, [map, pts, mineIds, at, busLL?.join(',')]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { if (map) fitAll() }, [map, pts.length]) // eslint-disable-line react-hooks/exhaustive-deps
+  // 운행 구역 (갈 수 있는 곳 연초록 / 못 가는 곳 빨간 빗금) — 정류장 아래에 깔림
+  useEffect(() => {
+    if (!map) return
+    const made = data.areas.filter((a) => !parent || a.show_parents).flatMap((a) => drawArea(map, a))
+    return () => made.forEach((x) => x.remove())
+  }, [map, data.areas, parent])
 
   const noCoords = pts.filter((p) => !p.id.startsWith('dojang')).length === 0
   return (
@@ -762,3 +768,116 @@ export function RequestSheet({ data, kids, onClose, onDone, admin, initial, orgI
 }
 const addDay = (d: string, n: number): string => new Date(Date.parse(d + 'T00:00:00Z') + n * 86400_000).toISOString().slice(0, 10)
 const dayOfDateLocal = (d: string): string => '일월화수목금토'[new Date(d + 'T00:00:00Z').getUTCDay()]
+
+/* ---------------- 관리자: 운행 구역 그리기 ---------------- */
+
+type DrawMode = { kind: 'ok' | 'no'; shape: 'line' | 'area' }
+const MODE_LABEL = (m: DrawMode): string => `${m.kind === 'ok' ? '갈 수 있는' : '못 가는'} ${m.shape === 'line' ? '길' : '동네'}`
+
+export function AreaEditor({ data, place, orgId, onSaved }: { data: ShuttleData; place: Place | null; orgId: string; onSaved(): Promise<void> }): JSX.Element {
+  const box = useRef<HTMLDivElement>(null)
+  const map = useMapAdapter(box, place?.lat != null && place.lng != null ? [place.lat, place.lng] : [37.318, 126.835], 16)
+  const [mode, setMode] = useState<DrawMode | null>(null)
+  const [pts, setPts] = useState<LL[]>([])
+  const [name, setName] = useState('')
+  const [showParents, setShowParents] = useState(true)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+  const modeRef = useRef<DrawMode | null>(null)
+  modeRef.current = mode
+
+  // 지도 누르면 점 추가 (그리는 중일 때만)
+  useEffect(() => {
+    if (!map) return
+    map.onClick((a, b) => { if (modeRef.current) setPts((p) => [...p, [a, b]]) })
+  }, [map])
+
+  // 저장된 구역 + 정류장 이름표(참고용)
+  useEffect(() => {
+    if (!map) return
+    const made = data.areas.flatMap((a) => drawArea(map, a))
+    for (const st of data.stops) {
+      if (st.lat == null || st.lng == null) continue
+      made.push(map.marker([st.lat, st.lng], `<div class="map-stop small"><span class="num">●</span><span class="nm">${st.name.replace(/[<>&]/g, '')}</span></div>`, 26, st.name, 100, [13, 13]))
+    }
+    if (place?.lat != null && place.lng != null) made.push(map.marker([place.lat, place.lng], pinHtml('🥋', 'dojang'), 26, place.name, 150))
+    return () => made.forEach((x) => x.remove())
+  }, [map, data.areas, data.stops, place])
+
+  // 그리는 중인 모양
+  useEffect(() => {
+    if (!map || !mode) return
+    const made = pts.length >= 2 ? drawArea(map, { id: 'draft', name: '', kind: mode.kind, shape: mode.shape, points: pts, show_parents: true }) : []
+    pts.forEach((p) => made.push(map.marker(p, '<div class="map-vertex"></div>', 12, '', 900)))
+    return () => made.forEach((x) => x.remove())
+  }, [map, pts, mode])
+
+  const start = (m: DrawMode): void => { setMode(m); setPts([]); setName(''); setErr(null) }
+  const cancel = (): void => { setMode(null); setPts([]) }
+  const save = async (): Promise<void> => {
+    if (!mode) return
+    const need = mode.shape === 'line' ? 2 : 3
+    if (pts.length < need) return setErr(`점을 ${need}개 이상 찍어 주세요.`)
+    setBusy(true); setErr(null)
+    const { error } = await supabase.from('shuttle_areas').insert({ org_id: orgId, name: name.trim() || MODE_LABEL(mode), kind: mode.kind, shape: mode.shape, points: pts, show_parents: showParents })
+    setBusy(false)
+    if (error) return setErr('저장 실패: ' + errText(error))
+    cancel()
+    await onSaved()
+  }
+  const remove = async (a: Area): Promise<void> => {
+    if (!window.confirm(`"${a.name}" 표시를 지울까요?`)) return
+    await supabase.from('shuttle_areas').delete().eq('id', a.id)
+    await onSaved()
+  }
+  const toggleParents = async (a: Area): Promise<void> => {
+    await supabase.from('shuttle_areas').update({ show_parents: !a.show_parents }).eq('id', a.id)
+    await onSaved()
+  }
+
+  return (
+    <div className="form area-editor">
+      {!mode ? (
+        <>
+          <p className="muted small">그릴 종류를 고르고 지도를 콕콕 눌러 점을 찍으세요. <b>길</b>은 선으로, <b>동네</b>는 둘러싸는 모양으로 그려요.</p>
+          <div className="area-modes">
+            <button className="am ok" onClick={() => start({ kind: 'ok', shape: 'line' })}>🟩 갈 수 있는 길</button>
+            <button className="am no" onClick={() => start({ kind: 'no', shape: 'line' })}>🟥 못 가는 길</button>
+            <button className="am ok" onClick={() => start({ kind: 'ok', shape: 'area' })}>🟩 갈 수 있는 동네</button>
+            <button className="am no" onClick={() => start({ kind: 'no', shape: 'area' })}>▨ 못 가는 동네</button>
+          </div>
+        </>
+      ) : (
+        <div className="area-drawing">
+          <b>✏️ {MODE_LABEL(mode)} 그리는 중</b> <span className="muted small">· 점 {pts.length}개 (지도를 눌러 추가)</span>
+          <input placeholder={`이름 (예: ${mode.kind === 'ok' ? '원곡로 큰길' : '원곡동 다세대 골목'})`} value={name} onChange={(e) => setName(e.target.value)} />
+          <label className="check small"><input type="checkbox" checked={showParents} onChange={(e) => setShowParents(e.target.checked)} /><span>학부모 지도에도 보이기</span></label>
+          <div className="row">
+            <button className="ghost small-btn" disabled={!pts.length} onClick={() => setPts(pts.slice(0, -1))}>↩ 점 하나 취소</button>
+            <button className="ghost small-btn" onClick={cancel}>그만 그리기</button>
+            <button className="primary small-btn grow" disabled={busy} onClick={save}>✓ 완료하고 저장</button>
+          </div>
+        </div>
+      )}
+      {err && <div className="error">{err}</div>}
+      <div ref={box} className={`rv-map area-map ${mode ? 'drawing' : ''}`} />
+      <div className="rv-legend">
+        <span><i className="lg-ok" /> 갈 수 있음</span>
+        <span><i className="lg-no" /> 못 감 (빗금)</span>
+      </div>
+      {data.areas.length > 0 && (
+        <ul className="plain area-list">
+          {data.areas.map((a) => (
+            <li key={a.id} className="item-row">
+              <span className={`chip ${a.kind === 'ok' ? 'live' : 'danger'}`}>{a.kind === 'ok' ? '갈 수 있음' : '못 감'}</span>
+              <span className="grow"><b>{a.name}</b> <span className="muted tiny">{a.shape === 'line' ? '길' : '동네'}</span></span>
+              <button className="ghost small-btn" title="학부모 지도 표시" onClick={() => toggleParents(a)}>{a.show_parents ? '👪 보임' : '👪 숨김'}</button>
+              <button className="ghost small-btn" onClick={() => map?.fit(a.points)}>보기</button>
+              <button className="ghost small-btn danger" onClick={() => remove(a)}>삭제</button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}

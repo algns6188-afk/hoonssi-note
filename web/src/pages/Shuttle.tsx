@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase, errText, type Member, type Student } from '../supabase'
-import { DriverMode, PickMap, placeSearch, RequestSheet, RouteView, usePlace, useTrips } from './ShuttleLive'
-import { addressQuery, geocode } from '../mapAdapter'
+import { AreaEditor, DriverMode, PickMap, placeSearch, RequestSheet, RouteView, usePlace, useTrips } from './ShuttleLive'
+import { addressQuery, geocode, type Area } from '../mapAdapter'
 
 /* ---------------- 데이터 ---------------- */
 
@@ -24,6 +24,7 @@ export interface RideRequest {
 export interface ShuttleData {
   vehicles: Vehicle[]; stops: Stop[]; runs: Run[]; runStops: RunStop[]; rides: Ride[]
   exceptions: RideException[]; requests: RideRequest[]; requestsOk: boolean
+  areas: Area[]; areasOk: boolean
 }
 /** 이 요일의 가장 가까운 날짜 (오늘 포함) */
 export function nextDateOf(d: string): string {
@@ -94,19 +95,21 @@ export function ridersAt(data: ShuttleData, rs: RunStop, run: Run, d: string): R
 export async function loadShuttle(): Promise<ShuttleData> {
   const from = new Date(Date.now() + 9 * 3600_000 - 86400_000).toISOString().slice(0, 10)
   const since = new Date(Date.now() - 14 * 86400_000).toISOString()
-  const [v, s, r, rs, ra, ex, rq] = await Promise.all([
+  const [v, s, r, rs, ra, ex, rq, ar] = await Promise.all([
     supabase.from('vehicles').select('*').order('name'),
     supabase.from('stops').select('*').order('name'),
     supabase.from('runs').select('*').order('sort'),
     supabase.from('run_stops').select('*'),
     supabase.from('ride_assignments').select('*'),
     supabase.from('ride_exceptions').select('*').gte('date', from),
-    supabase.from('ride_requests').select('*').or(`status.eq.pending,created_at.gte.${since}`).order('created_at', { ascending: false })
+    supabase.from('ride_requests').select('*').or(`status.eq.pending,created_at.gte.${since}`).order('created_at', { ascending: false }),
+    supabase.from('shuttle_areas').select('*').order('created_at')
   ])
   return {
     vehicles: (v.data as Vehicle[]) ?? [], stops: (s.data as Stop[]) ?? [], runs: (r.data as Run[]) ?? [],
     runStops: (rs.data as RunStop[]) ?? [], rides: (ra.data as Ride[]) ?? [],
-    exceptions: (ex.data as RideException[]) ?? [], requests: (rq.data as RideRequest[]) ?? [], requestsOk: !rq.error
+    exceptions: (ex.data as RideException[]) ?? [], requests: (rq.data as RideRequest[]) ?? [], requestsOk: !rq.error,
+    areas: (ar.data as Area[]) ?? [], areasOk: !ar.error
   }
 }
 
@@ -119,7 +122,7 @@ export default function ShuttleTab({ students, member }: { students: Student[]; 
   const [day, setDay] = useState(DAYS.includes(todayDay()) ? todayDay() : '월')
   const [open, setOpen] = useState<string | null>(null)
   const [edit, setEdit] = useState<{ run: Run; rs: RunStop } | null>(null)
-  const [sheet, setSheet] = useState<'stops' | 'vehicle' | null>(null)
+  const [sheet, setSheet] = useState<'stops' | 'vehicle' | 'areas' | null>(null)
   const [q, setQ] = useState('')
   const [driving, setDriving] = useState<Run | null>(null)
   const [changing, setChanging] = useState<RideRequest | 'new' | null>(null)
@@ -178,6 +181,7 @@ export default function ShuttleTab({ students, member }: { students: Student[]; 
           {DAYS.map((d) => <button key={d} className={d === day ? 'pill on' : 'pill'} onClick={() => setDay(d)}>{d}{d === todayDay() ? ' (오늘)' : ''}</button>)}
         </div>
         <button className="ghost small-btn" onClick={() => setSheet('stops')}>📍 정류장 {data.stops.length}</button>
+        <button className="ghost small-btn" onClick={() => setSheet('areas')}>🗺 운행 구역 {data.areas.length || ''}</button>
         <button className="ghost small-btn" onClick={() => setSheet('vehicle')}>🚐 {vehicle?.name ?? '차량'}</button>
         {data.requestsOk && <button className="primary small-btn" onClick={() => setChanging('new')}>✏️ 변경 입력</button>}
       </div>
@@ -298,6 +302,12 @@ export default function ShuttleTab({ students, member }: { students: Student[]; 
       {runs.length === 0 && <p className="muted center">{day}요일 운행이 없어요.</p>}
 
       {edit && <RunStopSheet data={data} run={edit.run} rs={edit.rs} students={students} member={member} onClose={() => setEdit(null)} onSaved={load} />}
+      {sheet === 'areas' && (
+        <Sheet title="🗺 운행 구역 표시" onClose={() => setSheet(null)}>
+          {data.areasOk ? <AreaEditor data={data} place={place} orgId={member.org_id} onSaved={load} />
+            : <p className="notice">운행 구역 표시는 Supabase에서 <b>schema-v17-shuttle-areas.sql</b> 을 실행한 뒤 쓸 수 있어요.</p>}
+        </Sheet>
+      )}
       {sheet === 'stops' && <StopsSheet data={data} member={member} onClose={() => setSheet(null)} onSaved={load} />}
       {sheet === 'vehicle' && vehicle && <VehicleSheet vehicle={vehicle} onClose={() => setSheet(null)} onSaved={load} />}
     </div>

@@ -622,3 +622,18 @@ a.btn.call { background: var(--in-soft); padding: 8px 10px; }
 .map-hits li:last-child { border-bottom: 0; }
 .map-hits li:hover { background: #f2f6ff; }
 .lg-stop { width: 12px !important; height: 12px !important; border-radius: 50% !important; background: #1f5b45; }
+
+/* ---------- 운행 구역 그리기 ---------- */
+.area-modes { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.am { padding: 12px 8px; border-radius: 12px; font-weight: 700; }
+.am.ok { background: #eaf7ea; color: #2f7a35; border: 1px solid #b9e0bb; }
+.am.no { background: #fdecea; color: #c23d22; border: 1px solid #f3b8ab; }
+.area-drawing { display: flex; flex-direction: column; gap: 6px; background: #fff8e1; border: 1px solid #f0d27a; border-radius: 12px; padding: 10px 12px; }
+.area-map { height: 420px; }
+.area-map.drawing { outline: 3px solid #f0b429; cursor: crosshair; }
+.map-vertex { width: 12px; height: 12px; border-radius: 50%; background: #fff; border: 3px solid #f0b429; box-sizing: border-box; }
+.map-stop.small .num { width: 16px; height: 16px; font-size: 8px; border-width: 2px; }
+.map-stop.small .nm { font-size: 10px; padding: 1px 6px 1px 10px; margin-left: -7px; opacity: .85; }
+.lg-ok { background: rgba(95,191,106,.45); height: 8px !important; }
+.lg-no { background: repeating-linear-gradient(45deg, #e2553b 0 2px, transparent 2px 5px); height: 8px !important; border: 1px dashed #e2553b; }
+.area-list .item-row { gap: 6px; }
