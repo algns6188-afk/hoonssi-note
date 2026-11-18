@@ -621,3 +621,4 @@ a.btn.call { background: var(--in-soft); padding: 8px 10px; }
 .map-hits li { padding: 8px 10px; border-bottom: 1px solid var(--line); cursor: pointer; }
 .map-hits li:last-child { border-bottom: 0; }
 .map-hits li:hover { background: #f2f6ff; }
+.lg-stop { width: 12px !important; height: 12px !important; border-radius: 50% !important; background: #1f5b45; }

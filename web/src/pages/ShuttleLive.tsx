@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { addressQuery, createMap, geocode, onMapFallback, roadPath, type LL, type MapAdapter, type MarkerH } from '../mapAdapter'
+import { addressQuery, createMap, geocode, onMapFallback, type LL, type MapAdapter, type MarkerH } from '../mapAdapter'
 import { supabase, errText } from '../supabase'
 import { useI18n } from '../i18n'
 import { activeRide, describeRequest, stopLabel, type RideView, hm, loadShuttle, ridersView, stopsOn, type RideRequest, type Run, type RunStop, type ShuttleData, type Stop } from './Shuttle'
@@ -189,7 +189,6 @@ function RouteMap({ data, run, list, trip, place, mineIds, parent }: {
   const { t } = useI18n()
   const box = useRef<HTMLDivElement>(null)
   const map = useMapAdapter(box, [37.32, 126.83], 14)
-  const [road, setRoad] = useState<{ path: LL[]; idx: number[] } | null>(null)
 
   const pts = useMemo(() => {
     const out: { ll: LL; label: string; id: string; name: string }[] = []
@@ -202,15 +201,7 @@ function RouteMap({ data, run, list, trip, place, mineIds, parent }: {
     if (dojang && run.kind !== 'from') out.push({ ...dojang, id: 'dojang-end' })
     return out
   }, [data, run, list, place, parent])
-  const ptsKey = pts.map((p) => p.ll.join(',')).join(';')
 
-  // 도로 경로 (안 되면 직선)
-  useEffect(() => {
-    let alive = true
-    setRoad(null)
-    roadPath(pts.map((p) => p.ll)).then((r) => { if (alive) setRoad(r ?? { path: pts.map((p) => p.ll), idx: pts.map((_, i) => i) }) })
-    return () => { alive = false }
-  }, [ptsKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // 차량은 실시간으로 움직이지 않고, 마지막으로 도착한 정류장에 표시
   const running = !!trip && !trip.ended_at && !trip.kid_done
@@ -223,15 +214,11 @@ function RouteMap({ data, run, list, trip, place, mineIds, parent }: {
   }
   const busLL = running && at >= 0 ? pts[at].ll : null
 
-  const fitAll = useCallback(() => { map?.fit(road?.path.length ? road.path : pts.map((p) => p.ll)) }, [map, road, pts])
+  const fitAll = useCallback(() => { map?.fit(pts.map((p) => p.ll)) }, [map, pts])
 
   useEffect(() => {
-    if (!map || !road) return
+    if (!map) return
     const made: { remove(): void }[] = []
-    if (road.path.length > 1) {
-      made.push(map.polyline(road.path, { color: '#9bbf95', weight: 6 }))
-      if (at > 0) made.push(map.polyline(road.path.slice(0, road.idx[at] + 1), { color: '#1f5b45', weight: 7 }))
-    }
     pts.forEach((p, i) => {
       const passed = trip && i <= at
       const cls = `${passed ? 'passed' : ''} ${mineIds.has(p.id) ? 'mine' : ''} ${p.id.startsWith('dojang') ? 'dojang' : ''}`
@@ -240,9 +227,9 @@ function RouteMap({ data, run, list, trip, place, mineIds, parent }: {
     })
     if (busLL) made.push(map.marker(busLL, '<div class="map-bus">🚐</div>', 36, '', 1000, [18, 46]))
     return () => made.forEach((x) => x.remove())
-  }, [map, road, pts, mineIds, at, busLL?.join(',')]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [map, pts, mineIds, at, busLL?.join(',')]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => { if (map && road) fitAll() }, [map, road]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (map) fitAll() }, [map, pts.length]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const noCoords = pts.filter((p) => !p.id.startsWith('dojang')).length === 0
   return (
@@ -253,8 +240,7 @@ function RouteMap({ data, run, list, trip, place, mineIds, parent }: {
         {busLL && <button onClick={() => map?.setView(busLL, 16)}>🚐 {t.shBusPos}</button>}
       </div>
       <div className="rv-legend">
-        <span><i className="lg-route" /> {t.shLegendRoute}</span>
-        <span><i className="lg-passed" /> {t.shLegendPassed}</span>
+        <span><i className="lg-stop" /> {t.shPassed}</span>
         {mineIds.size > 0 && <span><i className="lg-mine" /> {t.shLegendMine}</span>}
       </div>
       <p className="muted tiny">{t.shBusNote}</p>
