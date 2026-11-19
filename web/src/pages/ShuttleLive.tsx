@@ -266,6 +266,44 @@ export function DriverMode({ data, run, day, place, orgId, onExit }: { data: Shu
   const lastSend = useRef(0)
   const list = stopsOn(data, run, day)
 
+  // 이 폰이 이 차량의 위치 기기인지 (v22: 차량별 기기 켬/끔)
+  const vehicleId = run.vehicle_id ?? data.vehicles[0]?.id ?? null
+  const vehicleName = data.vehicles.find((v) => v.id === vehicleId)?.name ?? '차량'
+  const [dev, setDev] = useState<{ state: 'loading' | 'legacy' | 'none' | 'other' | 'off' | 'on'; id?: string; name?: string; token?: string }>({ state: 'loading' })
+  const [devName, setDevName] = useState('')
+  const checkDevice = useCallback(async () => {
+    let token: string | null = null
+    try { token = localStorage.getItem('kc-device-token') } catch { /* 없음 */ }
+    const { data: rows, error } = await supabase.from('vehicle_devices').select('id,vehicle_id,name,token,enabled').eq('kind', 'web')
+    if (error) return setDev({ state: 'legacy' })                  // v22 전: 예전 방식으로 보냄
+    const mine = ((rows as { id: string; vehicle_id: string; name: string; token: string; enabled: boolean }[]) ?? []).find((r) => r.token === token)
+    if (!mine) return setDev({ state: 'none' })
+    if (mine.vehicle_id !== vehicleId) return setDev({ state: 'other', id: mine.id, name: mine.name, token: mine.token })
+    setDev({ state: mine.enabled ? 'on' : 'off', id: mine.id, name: mine.name, token: mine.token })
+  }, [vehicleId])
+  useEffect(() => { checkDevice() }, [checkDevice])
+  const registerHere = async (): Promise<void> => {
+    if (!vehicleId) return setErr('차량이 없어요. 차량 · 위치 기기에서 차량을 먼저 만들어 주세요.')
+    let token: string | null = null
+    try { token = localStorage.getItem('kc-device-token') } catch { /* 없음 */ }
+    if (dev.state === 'other' && dev.id) {
+      await supabase.from('vehicle_devices').update({ vehicle_id: vehicleId }).eq('id', dev.id)
+      await supabase.rpc('set_device_enabled', { p_device: dev.id, p_on: true })
+      return checkDevice()
+    }
+    const tk = token && token.length >= 12 ? token : 'kc' + Array.from(crypto.getRandomValues(new Uint8Array(12)), (b) => b.toString(36).padStart(2, '0')).join('').slice(0, 18)
+    const { data: d, error } = await supabase.from('vehicle_devices').insert({ org_id: orgId, vehicle_id: vehicleId, name: devName.trim() || '운행 폰 (웹 화면)', kind: 'web', token: tk, enabled: false }).select('id').single()
+    if (error) return setErr('등록 실패: ' + errText(error))
+    try { localStorage.setItem('kc-device-token', tk) } catch { /* 없음 */ }
+    await supabase.rpc('set_device_enabled', { p_device: (d as { id: string }).id, p_on: true })
+    checkDevice()
+  }
+  const turnOn = async (): Promise<void> => {
+    if (!dev.id) return
+    await supabase.rpc('set_device_enabled', { p_device: dev.id, p_on: true })
+    checkDevice()
+  }
+
   // 운행 시작 (직접 시작으로 기록 · 오늘 이미 시작했으면 이어서)
   useEffect(() => {
     (async () => {
@@ -301,6 +339,8 @@ export function DriverMode({ data, run, day, place, orgId, onExit }: { data: Shu
   }, [])
 
   // GPS
+  const devRef = useRef(dev)
+  devRef.current = dev
   useEffect(() => {
     if (!trip) return
     if (!('geolocation' in navigator)) { setErr('이 기기에서는 위치를 쓸 수 없어요.'); return }
@@ -311,15 +351,19 @@ export function DriverMode({ data, run, day, place, orgId, onExit }: { data: Shu
         setErr(null)
         if (Date.now() - lastSend.current < 5000 || g.acc > 150) return
         lastSend.current = Date.now()
-        const { data: r, error } = await supabase.rpc('shuttle_ping', { p_trip: trip.id, p_lat: g.lat, p_lng: g.lng, p_speed: g.speed })
+        if (devRef.current.state !== 'on' && devRef.current.state !== 'legacy') return   // 이 폰은 위치 기기가 아님(또는 꺼짐)
+        const { data: r, error } = devRef.current.state === 'on'
+          ? await supabase.rpc('shuttle_web_ping', { p_token: devRef.current.token, p_lat: g.lat, p_lng: g.lng, p_speed: g.speed })
+          : await supabase.rpc('shuttle_ping', { p_trip: trip.id, p_lat: g.lat, p_lng: g.lng, p_speed: g.speed })
         if (error) setErr('위치 전송 실패: ' + errText(error))
+        else if ((r as { ignored?: string })?.ignored === 'device_off') { setErr('이 폰은 위치 받기가 꺼져 있어요.'); checkDevice() }
         else {
           setSent(Date.now())
           const passed = (r as { passed?: Record<string, string> })?.passed
           if (passed) setTrip((t) => (t ? { ...t, passed } : t))
         }
       },
-      (e) => setErr(e.code === 1 ? '위치 권한이 꺼져 있어요. 설정 → 사파리(또는 앱) → 위치 → "허용"으로 바꿔 주세요.' : '위치를 찾는 중이에요… (' + e.message + ')'),
+      (e) => setErr(e.code === 1 ? 'PERM' : '위치를 찾는 중이에요… (' + e.message + ')'),
       { enableHighAccuracy: true, maximumAge: 3000, timeout: 20000 }
     )
     return () => navigator.geolocation.clearWatch(id)
@@ -359,7 +403,31 @@ export function DriverMode({ data, run, day, place, orgId, onExit }: { data: Shu
           </>
         ) : <b>📡 위치를 찾는 중… (위치 권한을 "허용"해 주세요)</b>}
       </div>
-      {err && <div className="error">{err}</div>}
+      {dev.state === 'on' && <p className="small ok">✅ 이 폰({dev.name})이 {vehicleName} 위치를 보내고 있어요.</p>}
+      {(dev.state === 'none' || dev.state === 'other') && (
+        <div className="dev-ask">
+          <b>📱 이 폰을 {vehicleName} 위치 기기로 쓸까요?</b>
+          <span className="small muted">{dev.state === 'other' ? `이 폰은 다른 차량(${dev.name})에 등록돼 있어요.` : '등록하면 이 화면을 켜 둔 동안 위치를 보내요. (다른 기기는 자동으로 꺼져요)'}</span>
+          {dev.state === 'none' && <input placeholder="이 폰 이름 (예: 기사님 아이폰)" value={devName} onChange={(e) => setDevName(e.target.value)} />}
+          <button className="primary" onClick={registerHere}>{dev.state === 'other' ? `이 폰을 ${vehicleName}로 옮기고 켜기` : '등록하고 위치 보내기'}</button>
+          <span className="tiny muted">위치를 다른 폰(Traccar 앱 등)에서 받고 있다면 등록하지 않아도 돼요. 정류장은 아래에서 직접 눌러 표시할 수 있어요.</span>
+        </div>
+      )}
+      {dev.state === 'off' && (
+        <div className="dev-ask">
+          <b>📴 이 폰({dev.name})은 위치 받기가 꺼져 있어요</b>
+          <span className="small muted">지금은 다른 기기에서 {vehicleName} 위치를 받고 있을 수 있어요.</span>
+          <button className="primary" onClick={turnOn}>이 폰으로 바꾸기 (켜기)</button>
+        </div>
+      )}
+      {err === 'PERM' ? (
+        <div className="error">
+          <b>위치 권한이 꺼져 있어요.</b><br />
+          아이폰: 설정 → 개인정보 보호 및 보안 → 위치 서비스(켬) → <b>Safari 웹사이트</b> → "앱을 사용하는 동안" + <b>정확한 위치 켬</b><br />
+          안드로이드: 주소창 왼쪽 자물쇠 → 권한 → 위치 → 허용<br />
+          바꾼 뒤 이 화면을 새로고침해 주세요.
+        </div>
+      ) : err && <div className="error">{err}</div>}
       <p className="notice small">⚠️ 운행 중에는 <b>이 화면을 켜 둔 채로</b> 두세요. 아이폰은 화면이 꺼지거나 다른 앱으로 가면 위치 전송이 멈춰요. 정류장 70m 안에 들어가면 자동으로 "지남" 표시돼요. 안 되면 정류장을 눌러 직접 표시하세요.</p>
       <ol className="driver-stops">
         {list.map((rs, i) => {

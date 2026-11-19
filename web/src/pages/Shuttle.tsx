@@ -179,7 +179,7 @@ export default function ShuttleTab({ students, member }: { students: Student[]; 
       <div className="toolbar">
         {data.requestsOk && <button className="primary" onClick={() => setChanging('new')}>✏️ 차량 변경 입력</button>}
         <button onClick={() => setSheet('stops')}>📍 정류장 {data.stops.length}</button>
-        <button className="tool-sub" onClick={() => setSheet('vehicle')}>🚐 {vehicle?.name ?? '차량'} 설정</button>
+        <button className="tool-sub" onClick={() => setSheet('vehicle')}>🚐 차량 · 위치 기기</button>
       </div>
       <div className="pills day-pills">
         {DAYS.map((d) => <button key={d} className={d === day ? 'pill on' : 'pill'} onClick={() => setDay(d)}>{d}{d === todayDay() ? ' (오늘)' : ''}</button>)}
@@ -333,7 +333,7 @@ export default function ShuttleTab({ students, member }: { students: Student[]; 
 
       {edit && <RunStopSheet data={data} run={edit.run} rs={edit.rs} students={students} member={member} onClose={() => setEdit(null)} onSaved={load} />}
       {sheet === 'stops' && <StopsSheet data={data} member={member} onClose={() => setSheet(null)} onSaved={load} />}
-      {sheet === 'vehicle' && vehicle && <VehicleSheet vehicle={vehicle} onClose={() => setSheet(null)} onSaved={load} />}
+      {sheet === 'vehicle' && <VehiclesSheet data={data} member={member} onClose={() => setSheet(null)} onSaved={load} />}
     </div>
   )
 }
@@ -656,68 +656,164 @@ function StopsSheet({ data, member, onClose, onSaved }: { data: ShuttleData; mem
   )
 }
 
-function VehicleSheet({ vehicle, onClose, onSaved }: { vehicle: Vehicle; onClose(): void; onSaved(): Promise<void> }): JSX.Element {
-  const [name, setName] = useState(vehicle.name)
-  const [plate, setPlate] = useState(vehicle.plate)
-  const [cap, setCap] = useState(String(vehicle.capacity))
-  const [err, setErr] = useState<string | null>(null)
-  const save = async (): Promise<void> => {
-    const r = await supabase.from('vehicles').update({ name: name.trim(), plate: plate.trim(), capacity: Number(cap) || 15 }).eq('id', vehicle.id)
-    if (r.error) return setErr(errText(r.error))
+export interface Device { id: string; vehicle_id: string; name: string; kind: 'app' | 'web'; token: string; enabled: boolean; last_at: string | null }
+const GPS_URL = 'https://gqgeduyjicntceotatku.supabase.co/functions/v1/gps'
+export const newDeviceToken = (): string => {
+  const a = new Uint8Array(12); crypto.getRandomValues(a)
+  return 'kc' + Array.from(a, (b) => b.toString(36).padStart(2, '0')).join('').slice(0, 18)
+}
+const ago = (iso: string | null): string => {
+  if (!iso) return '아직 없음'
+  const m = Math.round((Date.now() - Date.parse(iso)) / 60000)
+  return m < 1 ? '방금' : m < 60 ? `${m}분 전` : m < 1440 ? `${Math.round(m / 60)}시간 전` : `${Math.round(m / 1440)}일 전`
+}
+
+/** 차량 관리: 차량별 정보 · 맡는 운행 · 위치 보내는 기기(켬/끔) */
+function VehiclesSheet({ data, member, onClose, onSaved }: { data: ShuttleData; member: Member; onClose(): void; onSaved(): Promise<void> }): JSX.Element {
+  const [devices, setDevices] = useState<Device[] | null>(null)
+  const [open, setOpen] = useState<string | null>(data.vehicles[0]?.id ?? null)
+  const [msg, setMsg] = useState<string | null>(null)
+  const loadDevices = useCallback(async () => {
+    const { data: d, error } = await supabase.from('vehicle_devices').select('*').order('created_at')
+    setDevices(error ? null : (d as Device[]) ?? [])
+  }, [])
+  useEffect(() => { loadDevices() }, [loadDevices])
+  const addVehicle = async (): Promise<void> => {
+    const n = data.vehicles.length + 1
+    const { error } = await supabase.from('vehicles').insert({ org_id: member.org_id, name: `${n}호차`, capacity: 15 })
+    if (error) return setMsg('추가 실패: ' + errText(error))
     await onSaved()
-    onClose()
   }
   return (
-    <Sheet title="🚐 차량" onClose={onClose}>
+    <Sheet title="🚐 차량 · 위치 기기" onClose={onClose}>
       <div className="form">
-        <label>이름<input value={name} onChange={(e) => setName(e.target.value)} /></label>
-        <label>차량 번호<input value={plate} onChange={(e) => setPlate(e.target.value)} placeholder="경기 12가 3456" /></label>
-        <label>정원 (아이 기준)<input inputMode="numeric" value={cap} onChange={(e) => setCap(e.target.value.replace(/\D/g, ''))} /></label>
-        {err && <div className="error">{err}</div>}
-        <button className="primary big" onClick={save}>저장</button>
-        <GpsAppBox vehicle={vehicle} onSaved={onSaved} />
+        {devices === null && <p className="notice small">위치 기기 관리는 Supabase에서 <b>schema-v22-vehicle-devices.sql</b> 을 실행한 뒤 쓸 수 있어요.</p>}
+        {data.vehicles.map((v) => (
+          <div key={v.id} className="veh-card">
+            <button className="veh-head" onClick={() => setOpen(open === v.id ? null : v.id)}>
+              <b>🚐 {v.name}</b> <span className="muted small">{v.plate || '번호 없음'} · 정원 {v.capacity}</span>
+              {devices && (() => {
+                const on = devices.find((d) => d.vehicle_id === v.id && d.enabled)
+                return <span className={`chip ${on ? 'live' : ''}`}>{on ? `📡 ${on.name}` : '위치 기기 없음'}</span>
+              })()}
+              <span className="muted">{open === v.id ? '▲' : '▼'}</span>
+            </button>
+            {open === v.id && <VehicleBody vehicle={v} data={data} devices={devices} member={member} onSaved={async () => { await onSaved(); await loadDevices() }} />}
+          </div>
+        ))}
+        <button onClick={addVehicle}>+ 차량 추가</button>
+        {msg && <div className="error">{msg}</div>}
       </div>
     </Sheet>
   )
 }
 
-const GPS_URL = 'https://gqgeduyjicntceotatku.supabase.co/functions/v1/gps'
-
-/** 차량 GPS 앱(Traccar Client) 연결: 화면이 꺼져도 위치 전송, 시간표로 운행 자동 시작·종료 */
-function GpsAppBox({ vehicle, onSaved }: { vehicle: Vehicle; onSaved(): Promise<void> }): JSX.Element {
-  const [token, setToken] = useState(vehicle.gps_token ?? '')
+function VehicleBody({ vehicle, data, devices, member, onSaved }: { vehicle: Vehicle; data: ShuttleData; devices: Device[] | null; member: Member; onSaved(): Promise<void> }): JSX.Element {
+  const [name, setName] = useState(vehicle.name)
+  const [plate, setPlate] = useState(vehicle.plate)
+  const [cap, setCap] = useState(String(vehicle.capacity))
   const [msg, setMsg] = useState<string | null>(null)
-  const ready = vehicle.gps_token !== undefined     // v18 실행 여부
-  const make = async (): Promise<void> => {
-    if (token && !window.confirm('새 식별자를 만들면 지금 폰 앱에 넣은 식별자는 더 이상 안 돼요. 새로 만들까요?')) return
-    const a = new Uint8Array(12); crypto.getRandomValues(a)
-    const t = 'kc' + Array.from(a, (b) => b.toString(36).padStart(2, '0')).join('').slice(0, 18)
-    const { error } = await supabase.from('vehicles').update({ gps_token: t }).eq('id', vehicle.id)
-    if (error) return setMsg('실패: ' + errText(error))
-    setToken(t); setMsg('✅ 식별자를 만들었어요. 아래 순서대로 폰 앱에 넣어 주세요.')
+  const [newName, setNewName] = useState('')
+  const [shown, setShown] = useState<string | null>(null)
+  const mine = (devices ?? []).filter((d) => d.vehicle_id === vehicle.id)
+  const multi = data.vehicles.length > 1
+
+  const save = async (): Promise<void> => {
+    const r = await supabase.from('vehicles').update({ name: name.trim(), plate: plate.trim(), capacity: Number(cap) || 15 }).eq('id', vehicle.id)
+    setMsg(r.error ? errText(r.error) : '✅ 저장했어요.')
     await onSaved()
   }
-  const copy = (t: string): void => { void navigator.clipboard?.writeText(t).then(() => setMsg('📋 복사했어요: ' + t)) }
-  const last = vehicle.gps_last_at ? Math.round((Date.now() - Date.parse(vehicle.gps_last_at)) / 60000) : null
-  if (!ready) return <p className="notice small">GPS 앱 연결은 Supabase에서 <b>schema-v18-gps-device.sql</b> 을 실행한 뒤 쓸 수 있어요.</p>
+  const addDevice = async (kind: 'app' | 'web'): Promise<void> => {
+    const token = newDeviceToken()
+    const label = newName.trim() || (kind === 'app' ? `폰 ${mine.length + 1} (Traccar 앱)` : `폰 ${mine.length + 1} (웹 화면)`)
+    const { data: d, error } = await supabase.from('vehicle_devices').insert({ org_id: member.org_id, vehicle_id: vehicle.id, name: label, kind, token, enabled: false }).select().single()
+    if (error) return setMsg('추가 실패: ' + errText(error))
+    if (kind === 'web') { try { localStorage.setItem('kc-device-token', token) } catch { /* 없음 */ } }
+    setNewName(''); setShown((d as Device).id)
+    setMsg(kind === 'app' ? '✅ 기기를 추가했어요. 아래 서버 URL과 식별자를 그 폰의 Traccar 앱에 넣고, [켜기]를 눌러 주세요.' : '✅ 이 폰을 웹 화면 기기로 등록했어요. [켜기]를 누르면 운행 화면에서 위치를 보내요.')
+    await onSaved()
+  }
+  const toggle = async (d: Device): Promise<void> => {
+    const { error } = await supabase.rpc('set_device_enabled', { p_device: d.id, p_on: !d.enabled })
+    setMsg(error ? '실패: ' + errText(error) : !d.enabled ? `✅ ${vehicle.name} 위치는 이제 "${d.name}"에서 받아요. (다른 기기는 꺼짐)` : `"${d.name}" 위치 받기를 껐어요.`)
+    await onSaved()
+  }
+  const remove = async (d: Device): Promise<void> => {
+    if (!window.confirm(`"${d.name}" 기기를 지울까요? 이 기기에서 오는 위치는 더 이상 받지 않아요.`)) return
+    await supabase.from('vehicle_devices').delete().eq('id', d.id)
+    await onSaved()
+  }
+  const copy = (t: string): void => { void navigator.clipboard?.writeText(t).then(() => setMsg('📋 복사했어요: ' + t), () => setMsg(t)) }
+  const myToken = ((): string | null => { try { return localStorage.getItem('kc-device-token') } catch { return null } })()
+  const assignRun = async (runId: string, on: boolean): Promise<void> => {
+    await supabase.from('runs').update({ vehicle_id: on ? vehicle.id : null }).eq('id', runId)
+    await onSaved()
+  }
+
   return (
-    <div className="gps-box">
-      <h3>📡 GPS 앱 연결 (Traccar Client)</h3>
-      <p className="muted small">폰 화면이 꺼져 있어도 위치를 보내요. 운행은 <b>시간표를 보고 자동으로 시작·종료</b>돼요. (첫 정류장 5분 전 ~ 마지막 정류장 10분 뒤, 운행 시간 밖 위치는 저장·공유 안 함)</p>
-      {last != null && <div className={`small ${last < 3 ? 'ok' : 'muted'}`}>마지막 위치 받음: {last < 1 ? '방금' : `${last}분 전`}</div>}
-      {token ? (
-        <ol className="gps-steps">
-          <li>Traccar Client → <b>설정 변경</b></li>
-          <li><b>서버 URL</b>에 넣기 <code>{GPS_URL}</code> <button className="small-btn" onClick={() => copy(GPS_URL)}>복사</button></li>
-          <li><b>기기 식별자</b>에 넣기 <code>{token}</code> <button className="small-btn" onClick={() => copy(token)}>복사</button></li>
-          <li>위치 정확도 <b>높음</b>, 간격 <b>10초</b> 정도로</li>
-          <li>휴대폰 설정 → Traccar Client → 위치 <b>"항상"</b> 허용</li>
-          <li>앱 첫 화면 <b>연속 추적</b> 켜기 (출근할 때 켜고 퇴근할 때 끄기)</li>
-        </ol>
-      ) : <p className="small">아직 연결 안 됨. 아래 버튼으로 이 차량 전용 식별자를 만드세요.</p>}
-      <button onClick={make}>{token ? '🔄 식별자 새로 만들기' : '🔑 기기 식별자 만들기'}</button>
-      {msg && <div className={msg.startsWith('실패') ? 'error' : 'notice-ok small'}>{msg}</div>}
-      <p className="muted tiny">식별자는 이 차량의 비밀번호 같은 값이에요. 다른 사람에게 알려 주지 마세요.</p>
+    <div className="veh-body form">
+      <div className="row wrap">
+        <label className="grow">이름<input value={name} onChange={(e) => setName(e.target.value)} /></label>
+        <label className="grow">차량 번호<input value={plate} onChange={(e) => setPlate(e.target.value)} placeholder="경기 12가 3456" /></label>
+        <label style={{ width: 110 }}>정원<input inputMode="numeric" value={cap} onChange={(e) => setCap(e.target.value.replace(/\D/g, ''))} /></label>
+      </div>
+      <button onClick={save}>차량 정보 저장</button>
+
+      {multi && (
+        <div>
+          <h3>이 차량이 맡는 운행</h3>
+          <div className="pills">
+            {data.runs.filter((r) => r.active).map((r) => {
+              const on = r.vehicle_id === vehicle.id
+              const other = r.vehicle_id && r.vehicle_id !== vehicle.id ? data.vehicles.find((x) => x.id === r.vehicle_id)?.name : null
+              return <button key={r.id} className={on ? 'pill on' : 'pill'} onClick={() => assignRun(r.id, !on)}>{r.name}{other ? ` (${other})` : ''}</button>
+            })}
+          </div>
+          <p className="muted tiny">아무 차량도 안 고른 운행은 어느 차량 위치로든 잡혀요. 차량이 2대 이상이면 운행마다 차량을 정해 주세요.</p>
+        </div>
+      )}
+
+      {devices && (
+        <div className="dev-box">
+          <h3>📡 위치 보내는 기기</h3>
+          <p className="muted small">이 차량 위치를 어떤 폰에서 받을지 정해요. <b>켜진 기기 하나</b>의 위치만 받아요. 다른 폰으로 바꾸려면 그 폰의 [켜기]를 누르세요.</p>
+          {mine.length === 0 && <p className="small">아직 등록된 기기가 없어요. 아래에서 추가하세요.</p>}
+          <ul className="plain dev-list">
+            {mine.map((d) => (
+              <li key={d.id} className={d.enabled ? 'on' : ''}>
+                <div className="row">
+                  <div className="grow">
+                    <b>{d.name}</b>{myToken === d.token && <span className="chip">이 폰</span>}
+                    <div className="muted tiny">{d.kind === 'app' ? 'Traccar 앱 · 화면 꺼져도 됨' : '강철노트 화면 · 운행 화면을 켜 둬야 함'} · 마지막 위치 {ago(d.last_at)}</div>
+                  </div>
+                  <button className={d.enabled ? 'dev-on' : 'dev-off'} onClick={() => toggle(d)}>{d.enabled ? '● 위치 받는 중 (끄기)' : '켜기'}</button>
+                </div>
+                <div className="row dev-actions">
+                  {d.kind === 'app' && <button className="ghost small-btn" onClick={() => setShown(shown === d.id ? null : d.id)}>{shown === d.id ? '설정값 닫기' : 'Traccar 설정값 보기'}</button>}
+                  {d.kind === 'web' && myToken !== d.token && <button className="ghost small-btn" onClick={() => { try { localStorage.setItem('kc-device-token', d.token) } catch { /* 없음 */ } setMsg(`✅ 이 폰을 "${d.name}"으로 지정했어요.`) }}>이 폰으로 지정</button>}
+                  <button className="ghost small-btn danger" onClick={() => remove(d)}>삭제</button>
+                </div>
+                {shown === d.id && d.kind === 'app' && (
+                  <ol className="gps-steps">
+                    <li>그 폰의 Traccar Client → <b>설정 변경</b></li>
+                    <li><b>서버 URL</b> <code>{GPS_URL}</code> <button className="small-btn" onClick={() => copy(GPS_URL)}>복사</button></li>
+                    <li><b>기기 식별자</b> <code>{d.token}</code> <button className="small-btn" onClick={() => copy(d.token)}>복사</button></li>
+                    <li>위치 정확도 높음 · 간격 10초 · 폰 설정에서 위치 "항상" 허용</li>
+                    <li>앱 첫 화면 <b>연속 추적</b> 켜기 → 여기서 <b>[켜기]</b></li>
+                  </ol>
+                )}
+              </li>
+            ))}
+          </ul>
+          <div className="row wrap">
+            <input className="grow" placeholder="기기 이름 (예: 기사님 갤럭시)" value={newName} onChange={(e) => setNewName(e.target.value)} />
+            <button onClick={() => addDevice('app')}>+ Traccar 앱 폰</button>
+            <button onClick={() => addDevice('web')}>+ 지금 이 폰 (웹 화면)</button>
+          </div>
+          <p className="muted tiny">Traccar 앱은 화면이 꺼져도 위치를 보내요(추천). 웹 화면은 운행 화면을 켜 둔 동안만 보내요. 식별자는 비밀번호 같은 값이라 다른 사람에게 알려 주지 마세요.</p>
+        </div>
+      )}
+      {msg && <div className={msg.startsWith('✅') || msg.startsWith('📋') ? 'notice-ok small' : 'error'}>{msg}</div>}
     </div>
   )
 }

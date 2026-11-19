@@ -766,3 +766,22 @@ a.btn.call { background: var(--in-soft); padding: 8px 10px; }
 .admin .receipt-box { background: #fff8e1; }
 .small-btn.need { background: #fff1d6; color: #9a6200; border: 1px solid #f0b429; font-weight: 700; }
 .small-btn.issued .tiny { font-size: 10px; opacity: .8; }
+
+/* ---------- 차량 · 위치 기기 ---------- */
+.veh-card { border: 1px solid var(--line); border-radius: 14px; background: var(--panel); overflow: hidden; }
+.veh-head { width: 100%; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; text-align: left; border: 0; border-radius: 0; background: transparent; padding: 12px 14px; }
+.veh-head .chip { margin-left: auto; }
+.veh-body { padding: 0 14px 14px; }
+.dev-box { display: flex; flex-direction: column; gap: 8px; background: var(--bg); border-radius: 12px; padding: 12px; }
+.dev-box h3 { margin: 0; }
+.dev-list { display: flex; flex-direction: column; gap: 8px; }
+.dev-list li { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
+.dev-list li.on { border-color: #3d9a5c; box-shadow: 0 0 0 1px #3d9a5c; }
+.dev-on { background: #e3f4e6; color: #1f7a3a; border-color: #b9e0bb; font-weight: 700; white-space: nowrap; }
+.dev-off { white-space: nowrap; }
+.dev-actions { gap: 4px; flex-wrap: wrap; }
+.dev-ask { display: flex; flex-direction: column; gap: 8px; background: #fff8e1; border: 1px solid #f0d27a; border-radius: 12px; padding: 12px; }
+.dev-list li > .row { align-items: center; }
+.dev-list li > .row > .grow { min-width: 0; }
+.dev-list li > .row > button { flex: none; align-self: center; padding: 8px 12px; font-size: 13px; }
+.veh-head > .muted:last-child { margin-left: 4px; }
