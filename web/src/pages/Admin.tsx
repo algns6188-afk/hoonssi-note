@@ -159,8 +159,10 @@ function TodayTab({ students, today, absent, onKiosk }: { students: Student[]; t
         <div><b>{counts.out}</b><span>하원</span></div>
         <div><b>{counts.none - absentCount}</b><span>미등원{absentCount ? ` (결석 ${absentCount})` : ''}</span></div>
       </div>
-      <button className="primary big wide" onClick={onKiosk}>📟 출석 태블릿 화면 열기</button>
-      <input className="search" placeholder="이름 또는 출석번호 검색" value={q} onChange={(e) => setQ(e.target.value)} />
+      <div className="toolbar">
+        <button className="primary" onClick={onKiosk}>📟 출석 태블릿 화면 열기</button>
+        <input className="search tool-search" placeholder="🔍 이름 또는 출석번호 검색" value={q} onChange={(e) => setQ(e.target.value)} />
+      </div>
       <div className="pills">
         {groups.map((g) => <button key={g} className={g === group ? 'pill on' : 'pill'} onClick={() => setGroup(g)}>{g}</button>)}
       </div>

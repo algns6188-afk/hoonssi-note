@@ -29,6 +29,7 @@ export default function AssistantBox(): JSX.Element {
   const [busy, setBusy] = useState<'plan' | 'run' | null>(null)
   const [result, setResult] = useState<{ ok: boolean; summary: string; detail?: string }[] | null>(null)
   const [err, setErr] = useState<string | null>(null)
+  const [focus, setFocus] = useState(false)
 
   const call = async (body: Record<string, unknown>): Promise<Record<string, unknown>> => {
     const { data, error } = await supabase.functions.invoke('assistant', { body })
@@ -111,6 +112,8 @@ export default function AssistantBox(): JSX.Element {
           value={text}
           placeholder={asked ? '위 질문에 답해 주세요' : '예: 김민준 11월 수련비 입금완료'}
           onChange={(e) => setText(e.target.value)}
+          onFocus={() => setFocus(true)}
+          onBlur={() => window.setTimeout(() => setFocus(false), 200)}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
               e.preventDefault()
@@ -120,7 +123,7 @@ export default function AssistantBox(): JSX.Element {
         />
         <button className="primary" disabled={!!busy || !text.trim()} onClick={ask}>{busy === 'plan' ? '…' : '정리'}</button>
       </div>
-      {!plan && !result && !err && (
+      {focus && !text && !plan && !result && !err && (
         <div className="as-examples">
           {EXAMPLES.map((x) => <button key={x} className="pill" onClick={() => setText(x)}>{x}</button>)}
         </div>

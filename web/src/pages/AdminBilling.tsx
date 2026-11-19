@@ -89,7 +89,6 @@ export default function BillingTab({ students, member }: { students: Student[]; 
           <button className={view === 'card' ? 'pill on' : 'pill'} onClick={() => changeView('card')}>🗂 카드</button>
           <button className={view === 'table' ? 'pill on' : 'pill'} onClick={() => changeView('table')}>📋 표</button>
         </span>
-        <button className="ghost small-btn" onClick={() => setSheet('settings')}>⚙️ 수납 설정</button>
       </div>
 
       <div className="stats3">
@@ -98,9 +97,10 @@ export default function BillingTab({ students, member }: { students: Student[]; 
         <div><b className={openSum ? 'danger' : ''}>{won(openSum)}</b><span>미납</span></div>
       </div>
 
-      <div className="row wrap">
-        <button className="primary grow" disabled={!loaded} onClick={() => setSheet('monthly')}>📅 수련비 일괄 청구</button>
-        <button className="grow" disabled={!loaded} onClick={() => setSheet('bill')}>💳 심사비·대회비 등 청구</button>
+      <div className="toolbar">
+        <button className="primary" disabled={!loaded} onClick={() => setSheet('monthly')}>📅 수련비 일괄 청구</button>
+        <button disabled={!loaded} onClick={() => setSheet('bill')}>💳 심사비·대회비 등 청구</button>
+        <button className="tool-sub" onClick={() => setSheet('settings')}>⚙️ 수납 설정</button>
       </div>
 
       {reported.length > 0 && (

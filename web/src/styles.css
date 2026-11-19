@@ -661,3 +661,104 @@ a.btn.call { background: var(--in-soft); padding: 8px 10px; }
 .trip-ctl .row { gap: 8px; }
 .backup.due { border: 2px solid #f0b429; }
 .backup details ul { margin: 6px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
+
+/* =====================================================================
+   디자인 테마: 관리자 = B 벤토 그리드 / 학부모 = F 소프트 파스텔
+   ===================================================================== */
+
+/* ---------- 관리자: 벤토 ---------- */
+.mobile.admin {
+  --bg: #eceef1; --panel: #ffffff; --line: #e1e4ea; --text: #1d2433; --muted: #7a8394;
+  --brand: #1d2433; --brand-soft: #e3e6ee; --side: #1d2433;
+  --lime: #d8f26b; --lime-ink: #3d4a00; --orange: #ff7a45;
+  font-family: 'Noto Sans KR', 'Pretendard', 'Apple SD Gothic Neo', 'Malgun Gothic', system-ui, sans-serif;
+  background: var(--bg); min-height: 100vh;
+}
+.admin .card { border: 0; border-radius: 18px; box-shadow: none; }
+.admin button { border-radius: 12px; }
+.admin button.primary { background: var(--brand); border-color: var(--brand); }
+.admin .pill.on { background: var(--brand); color: #fff; border-color: var(--brand); }
+.admin .m-title { font-weight: 900; letter-spacing: -0.02em; }
+.admin .list { border: 0; border-radius: 18px; }
+@media (min-width: 900px) { .admin .list li { border: 0; border-radius: 14px; } }
+
+/* 숫자 3칸 → 도시락 상자: 첫 칸은 진한 남색 큰 상자, 둘째 칸은 라임 */
+.admin .stats3 { grid-template-columns: 1.35fr 1fr 1fr; gap: 10px; }
+.admin .stats3 > div { border: 0; border-radius: 18px; align-items: flex-start; padding: 14px 16px; min-height: 92px; justify-content: space-between; }
+.admin .stats3 > div b { font-weight: 900; letter-spacing: -0.02em; line-height: 1.05; }
+.admin .stats3 > div span { order: -1; font-size: 12px; }
+.admin .stats3 > div:first-child { background: var(--brand); color: #fff; }
+.admin .stats3 > div:first-child span { color: #aab3c5; }
+.admin .stats3 > div:nth-child(2) { background: var(--lime); }
+.admin .stats3 > div:nth-child(2) span { color: var(--lime-ink); }
+.admin .stats3 > div:nth-child(2) b { color: var(--lime-ink); }
+.admin .billing .stats3 > div:nth-child(2) b { color: #2f6b00; }
+@media (min-width: 900px) { .admin .stats3 { grid-template-columns: 1.4fr 1fr 1fr; max-width: 760px; } .admin .stats3 > div { min-height: 110px; } }
+
+/* 운행 카드·수납 표·출석부 등 넓은 상자 */
+.admin .run-tile { border: 0; border-radius: 16px; }
+.admin .run-tile.on { background: var(--brand); color: #fff; border: 0; padding: 10px 12px; }
+.admin .run-tile.on .run-time, .admin .run-tile.on .muted, .admin .run-tile.on .tiny { color: #c9d2e3 !important; }
+.admin .run-tile.on .chip { background: rgba(255,255,255,.15); color: #fff; }
+.admin .bt-wrap, .admin .rv { border: 0; border-radius: 18px; }
+.admin .reported-box, .admin .req-box { border: 0; background: var(--lime); }
+.admin .reported-box *, .admin .req-box b { color: var(--lime-ink); }
+
+/* ---------- 학부모: 소프트 파스텔 ---------- */
+.mobile.parent {
+  --bg: #fffaf3; --panel: #ffffff; --line: #f0e4d6; --text: #3b3530; --muted: #8a7f75;
+  --brand: #ff7a59; --brand-soft: #ffe9df; --in: #2f8f55; --in-soft: #e5f4ea; --out: #5b6bd6; --out-soft: #e8edff;
+  font-family: 'Gowun Dodum', 'Noto Sans KR', 'Apple SD Gothic Neo', system-ui, sans-serif;
+  background: var(--bg); min-height: 100vh;
+}
+.parent .m-title, .parent h2, .parent h3, .parent .kid-name, .parent .pay-total b, .parent .bill-amount, .parent .acc-num b {
+  font-family: 'Jua', 'Noto Sans KR', sans-serif; font-weight: 400; letter-spacing: 0;
+}
+.parent .m-title { color: var(--brand); font-size: 22px; }
+.parent .logo { background: var(--brand); border-radius: 50%; font-family: 'Jua', sans-serif; font-weight: 400; }
+.parent .card { border: 0; border-radius: 26px; box-shadow: 0 2px 0 var(--line); }
+.parent button { border-radius: 16px; }
+.parent button.primary { background: var(--brand); border-color: var(--brand); }
+.parent .pill.on { background: var(--brand); color: #fff; border-color: var(--brand); }
+.parent .kids > .card:nth-child(3n+1) { background: #ffe9df; }
+.parent .kids > .card:nth-child(3n+2) { background: #e5f4ea; }
+.parent .kids > .card:nth-child(3n+3) { background: #e8edff; }
+.parent .kid-av { width: 44px; height: 44px; border-radius: 50%; background: #ffcf8a; color: #7a4b00; display: grid; place-items: center; font-family: 'Jua', sans-serif; font-size: 20px; flex: none; }
+.parent .kid-head { justify-content: flex-start; }
+.parent .kid-head .status { margin-left: auto; border-radius: 999px; background: #fff; }
+.parent .bills li { border-radius: 20px; border: 0; background: #fff8f2; }
+.parent .bills li.picked { background: #fff1ea; box-shadow: 0 0 0 2px var(--brand); }
+.parent .pay-bar { border: 0; border-radius: 22px; box-shadow: 0 6px 20px rgba(160,100,60,.15); }
+.parent .account-card { background: #fff4ec; border-color: #ffd9c7; border-radius: 22px; }
+.parent .pay-opt { border-radius: 18px; }
+.parent .pay-opt.on { background: #fff4ec; color: var(--brand); border-color: var(--brand); }
+.parent .pay-opt.on .radio { border-color: var(--brand); } .parent .pay-opt.on .radio::after { background: var(--brand); }
+.parent .rv { border: 0; border-radius: 22px; background: #fff; }
+.parent .rv-tabs { background: #fff1e6; border-radius: 16px; }
+.parent .rv-tabs button.on { color: var(--brand); box-shadow: 0 0 0 2px #ffc3ae; }
+.parent .ps-run { border: 0; border-radius: 22px; background: #fff; box-shadow: 0 2px 0 var(--line); }
+.parent .ps-head { background: #fff; border-radius: 22px; }
+.parent .sh-notice { background: #fff4ec; border-color: #ffd9c7; border-radius: 18px; }
+.parent .sh-notice summary { color: var(--brand); }
+.parent .sheet { background: var(--bg); }
+.parent .sheet-head { background: var(--bg); }
+
+/* ---------- 버튼 줄 정리: [큰 숫자] → [주요 버튼 줄] → [목록] ---------- */
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 12px 0; }
+.toolbar > button { padding: 12px 16px; font-weight: 700; white-space: nowrap; }
+.toolbar > button.primary { padding: 13px 20px; }
+.toolbar > .tool-sub { margin-left: auto; background: transparent; border: 1px dashed var(--line); color: var(--muted); font-weight: 500; padding: 9px 12px; }
+.toolbar > .tool-search { flex: 1 1 220px; margin: 0; min-width: 0; }
+@media (max-width: 899px) {
+  .toolbar > button { flex: 1 1 auto; }
+  .toolbar > button.primary { flex-basis: 100%; }
+  .toolbar > .tool-sub { flex: 0 0 auto; }
+  .toolbar > .tool-search { flex-basis: 100%; }
+}
+.day-pills { margin: 4px 0 2px; }
+.admin .month-nav { margin-top: 2px; }
+.admin .logo { background: var(--lime); color: var(--lime-ink); }
+.parent .today-row > div { background: rgba(255,255,255,.75); border-radius: 18px; }
+.parent .pay-group.active { border-color: #ffd0bd; background: #fff8f2; }
+.parent .bill-main .bill-check { accent-color: var(--brand); }
+.parent .pay-group-head input { accent-color: var(--brand); }

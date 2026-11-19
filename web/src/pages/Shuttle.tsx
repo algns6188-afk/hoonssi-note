@@ -176,13 +176,13 @@ export default function ShuttleTab({ students, member }: { students: Student[]; 
 
   return (
     <div className="page shuttle">
-      <div className="row wrap">
-        <div className="pills grow">
-          {DAYS.map((d) => <button key={d} className={d === day ? 'pill on' : 'pill'} onClick={() => setDay(d)}>{d}{d === todayDay() ? ' (오늘)' : ''}</button>)}
-        </div>
-        <button className="ghost small-btn" onClick={() => setSheet('stops')}>📍 정류장 {data.stops.length}</button>
-        <button className="ghost small-btn" onClick={() => setSheet('vehicle')}>🚐 {vehicle?.name ?? '차량'}</button>
-        {data.requestsOk && <button className="primary small-btn" onClick={() => setChanging('new')}>✏️ 변경 입력</button>}
+      <div className="toolbar">
+        {data.requestsOk && <button className="primary" onClick={() => setChanging('new')}>✏️ 차량 변경 입력</button>}
+        <button onClick={() => setSheet('stops')}>📍 정류장 {data.stops.length}</button>
+        <button className="tool-sub" onClick={() => setSheet('vehicle')}>🚐 {vehicle?.name ?? '차량'} 설정</button>
+      </div>
+      <div className="pills day-pills">
+        {DAYS.map((d) => <button key={d} className={d === day ? 'pill on' : 'pill'} onClick={() => setDay(d)}>{d}{d === todayDay() ? ' (오늘)' : ''}</button>)}
       </div>
       <p className="muted small">{date.slice(5).replace('-', '/')}({day}) 기준 · 하루 변경(안 탐·추가)과 최근 7일 안에 바뀐 자리가 표시돼요.</p>
       {!data.requestsOk && <p className="notice small">학부모 차량 변경 신청은 Supabase에서 <b>schema-v13-ride-requests.sql</b> 을 실행한 뒤 쓸 수 있어요.</p>}

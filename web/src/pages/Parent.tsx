@@ -42,7 +42,7 @@ export default function ParentApp({ member }: { member: Member }): JSX.Element {
   }, [load])
 
   return (
-    <div className="mobile">
+    <div className="mobile parent">
       <header className="m-head">
         <div className="logo">강</div>
         <div className="grow">
@@ -93,6 +93,7 @@ function KidCard({ kid, records, absences }: { kid: Student; records: Attendance
   return (
     <section className="card kid">
       <div className="kid-head">
+        <span className="kid-av" aria-hidden="true">{kid.name.length >= 3 ? kid.name.slice(1, 2) : kid.name.slice(0, 1)}</span>
         <div className="kid-name">{kid.name}</div>
         <span className={`status ${status}`}>
           {status === 'none' ? t.notArrived : status === 'in' ? `${t.arrived} ${hhmm(lastIn!.at)}` : `${t.left} ${hhmm(lastOut!.at)}`}
