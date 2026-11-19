@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase, errText, type Member, type Student } from '../supabase'
+import DepositMatch from './DepositMatch'
 import BillingTable, { daysSincePaid, needsReceipt, ReceiptSheet, type Inv } from './BillingTable'
 import type { StudentFull } from './StudentForm'
 import { itemLabel, periodLabel, shiftPeriod, thisPeriod, won, type FeeItem, type Invoice } from '../billing'
@@ -28,6 +29,7 @@ export default function BillingTab({ students, member }: { students: Student[]; 
   const [sheet, setSheet] = useState<'bill' | 'monthly' | 'settings' | null>(null)
   const [detail, setDetail] = useState<Invoice | null>(null)
   const [receiptFor, setReceiptFor] = useState<Inv | null>(null)
+  const [matching, setMatching] = useState(false)
   const [q, setQ] = useState('')
   const [loaded, setLoaded] = useState(false)
   const [view, setView] = useState<'table' | 'card'>(() => {
@@ -101,6 +103,7 @@ export default function BillingTab({ students, member }: { students: Student[]; 
       <div className="toolbar">
         <button className="primary" disabled={!loaded} onClick={() => setSheet('monthly')}>📅 수련비 일괄 청구</button>
         <button disabled={!loaded} onClick={() => setSheet('bill')}>💳 심사비·대회비 등 청구</button>
+        <button disabled={!loaded} onClick={() => setMatching(true)}>🏦 입금 확인 도우미</button>
         <button className="tool-sub" onClick={() => setSheet('settings')}>⚙️ 수납 설정</button>
       </div>
 
@@ -127,6 +130,7 @@ export default function BillingTab({ students, member }: { students: Student[]; 
           </section>
         )
       })()}
+      {matching && <DepositMatch invoices={invoices} students={students} member={member} onClose={() => setMatching(false)} />}
       {receiptFor && <ReceiptSheet invoice={receiptFor} studentName={nameOf(receiptFor.student_id)} defaultNo="" onClose={() => setReceiptFor(null)} />}
 
       {reported.length > 0 && (

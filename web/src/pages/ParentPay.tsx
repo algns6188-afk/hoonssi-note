@@ -178,6 +178,7 @@ export function ParentPayments({ kids }: { kids: Student[] }): JSX.Element | nul
         <ReportSheet
           invoices={reporting}
           payers={payers}
+          kidNames={[...new Set(reporting.map((i) => kidName(i.student_id)).filter(Boolean))]}
           onClose={() => setReporting(null)}
           onDone={() => {
             setReporting(null)
@@ -196,9 +197,10 @@ function namesOf(list: Invoice[], kidName: (id: string) => string, lang: Paramet
   return list.length > 1 ? `${first} ${others.replace('{n}', String(list.length - 1))}` : first
 }
 
-function ReportSheet({ invoices, payers, onClose, onDone }: {
+function ReportSheet({ invoices, payers, kidNames = [], onClose, onDone }: {
   invoices: Invoice[]
   payers: string[]
+  kidNames?: string[]
   onClose(): void
   onDone(): void
 }): JSX.Element {
@@ -235,9 +237,9 @@ function ReportSheet({ invoices, payers, onClose, onDone }: {
             <datalist id="payer-list">{payers.map((p) => <option key={p} value={p} />)}</datalist>
             <span className="hint">{t.payPayerHint}</span>
           </label>
-          {payers.length > 0 && (
+          {(payers.length > 0 || kidNames.length > 0) && (
             <div className="pills">
-              {payers.map((p) => (
+              {[...new Set([...kidNames, ...payers])].map((p) => (
                 <button key={p} className={p === payer ? 'pill on' : 'pill'} onClick={() => setPayer(p)}>{p}</button>
               ))}
             </div>
@@ -365,6 +367,15 @@ function PaySheet({ invoices, bank, kidName, onClose, onReport, onCopied, onLoca
               ))}
               {groups.length > 0 && <BankApps acc={groups.length === 1 ? groups[0].acc : null} onCopied={onCopied} />}
               {noAcc && <p className="notify-warn">{t.payNoAccount}</p>}
+              <div className="memo-box">
+                <b>{t.payMemoTitle}</b>
+                <span className="small">{t.payMemoHint}</span>
+                <div className="row wrap">
+                  {[...new Set(invoices.map((i) => kidName(i.student_id)).filter(Boolean))].map((n) => (
+                    <button key={n} className="memo-name" onClick={() => copyText(n).then(onCopied)}>{n} <span className="tiny">📋 {t.payMemoCopy}</span></button>
+                  ))}
+                </div>
+              </div>
               <p className="muted small">{t.payBankHint}</p>
               <button className="primary big" disabled={!groups.length} onClick={onReport}>{t.payReport}</button>
             </>

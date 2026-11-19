@@ -785,3 +785,16 @@ a.btn.call { background: var(--in-soft); padding: 8px 10px; }
 .dev-list li > .row > .grow { min-width: 0; }
 .dev-list li > .row > button { flex: none; align-self: center; padding: 8px 12px; font-size: 13px; }
 .veh-head > .muted:last-child { margin-left: 4px; }
+.memo-box { display: flex; flex-direction: column; gap: 6px; background: #fff8e1; border: 1px solid #f0d27a; border-radius: 14px; padding: 12px; }
+.memo-name { font-weight: 700; font-size: 16px; padding: 8px 14px; border-radius: 12px; background: #fff; }
+.parent .memo-box { background: #fff4ec; border-color: #ffd0bd; border-radius: 20px; }
+
+/* ---------- 입금 확인 도우미 ---------- */
+.wide-sheet { max-width: 860px; }
+.dm-list { display: flex; flex-direction: column; gap: 8px; }
+.dm-cand { background: var(--bg); border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
+.dm-none { display: flex; flex-direction: column; gap: 8px; }
+.file-btn { display: inline-flex !important; flex-direction: row !important; align-items: center; gap: 8px; border: 1px dashed var(--line); border-radius: 12px; padding: 14px; cursor: pointer; background: var(--panel); }
+.file-btn input { display: none; }
+.dm-table tr.dm-miss td { background: #fff8e1; }
+.dm-table select { max-width: 220px; }
