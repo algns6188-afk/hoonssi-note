@@ -762,3 +762,7 @@ a.btn.call { background: var(--in-soft); padding: 8px 10px; }
 .parent .pay-group.active { border-color: #ffd0bd; background: #fff8f2; }
 .parent .bill-main .bill-check { accent-color: var(--brand); }
 .parent .pay-group-head input { accent-color: var(--brand); }
+.receipt-box { border: 2px solid #f0b429 !important; }
+.admin .receipt-box { background: #fff8e1; }
+.small-btn.need { background: #fff1d6; color: #9a6200; border: 1px solid #f0b429; font-weight: 700; }
+.small-btn.issued .tiny { font-size: 10px; opacity: .8; }

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase, errText, type Member, type Student } from '../supabase'
-import BillingTable from './BillingTable'
+import BillingTable, { daysSincePaid, needsReceipt, ReceiptSheet, type Inv } from './BillingTable'
 import type { StudentFull } from './StudentForm'
 import { itemLabel, periodLabel, shiftPeriod, thisPeriod, won, type FeeItem, type Invoice } from '../billing'
 
@@ -27,6 +27,7 @@ export default function BillingTab({ students, member }: { students: Student[]; 
   const [filter, setFilter] = useState<Filter>('open')
   const [sheet, setSheet] = useState<'bill' | 'monthly' | 'settings' | null>(null)
   const [detail, setDetail] = useState<Invoice | null>(null)
+  const [receiptFor, setReceiptFor] = useState<Inv | null>(null)
   const [q, setQ] = useState('')
   const [loaded, setLoaded] = useState(false)
   const [view, setView] = useState<'table' | 'card'>(() => {
@@ -102,6 +103,31 @@ export default function BillingTab({ students, member }: { students: Student[]; 
         <button disabled={!loaded} onClick={() => setSheet('bill')}>💳 심사비·대회비 등 청구</button>
         <button className="tool-sub" onClick={() => setSheet('settings')}>⚙️ 수납 설정</button>
       </div>
+
+      {(() => {
+        // 현금영수증 발급할 것: 현금·계좌이체 10만 원 이상, 최근 60일 납부분
+        const need = (invoices as Inv[]).filter((i) => needsReceipt(i) && daysSincePaid(i) <= 60).sort((a, b) => (a.paid_at ?? '').localeCompare(b.paid_at ?? ''))
+        if (!need.length) return null
+        return (
+          <section className="card receipt-box">
+            <h3>🧾 현금영수증 발급할 것 {need.length}건 <span className="muted small">현금·계좌이체 10만 원 이상 · 받은 날부터 5일 안</span></h3>
+            <ul className="plain">
+              {need.slice(0, 8).map((i) => {
+                const d = daysSincePaid(i)
+                return (
+                  <li key={i.id} className="reported-row">
+                    <div className="grow"><b>{nameOf(i.student_id)}</b> {itemLabel(i.item_name, i.period)} <b>{won(i.paid_amount ?? i.amount)}</b>
+                      <div className={`small ${d >= 4 ? 'danger' : 'muted'}`}>납부 {d === 0 ? '오늘' : `${d}일 전`}{d >= 5 ? ' · 기한 지남' : d >= 4 ? ' · 내일까지' : ''}</div></div>
+                    <button className="primary small-btn" onClick={() => setReceiptFor(i)}>발급</button>
+                  </li>
+                )
+              })}
+            </ul>
+            {need.length > 8 && <p className="muted small">외 {need.length - 8}건은 📋 표에서 "🧾 발급 필요"로 보여요.</p>}
+          </section>
+        )
+      })()}
+      {receiptFor && <ReceiptSheet invoice={receiptFor} studentName={nameOf(receiptFor.student_id)} defaultNo="" onClose={() => setReceiptFor(null)} />}
 
       {reported.length > 0 && (
         <section className="card reported-box">

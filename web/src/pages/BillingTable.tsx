@@ -4,7 +4,10 @@ import { isTuition, itemLabel, periodLabel, won, type FeeItem, type Invoice } fr
 import type { StudentFull } from './StudentForm'
 
 /** v9 컬럼까지 포함한 청구서 */
-type Inv = Invoice & { paid_via?: string; receipt_no?: string; receipt_issued?: boolean }
+export type Inv = Invoice & {
+  paid_via?: string; receipt_no?: string; receipt_issued?: boolean
+  receipt_type?: string; receipt_approval?: string; receipt_at?: string | null; receipt_key?: string | null; receipt_url?: string | null; receipt_how?: string
+}
 interface PayMethod { id?: string; name: string; kind: 'transfer' | 'cash' | 'card' | 'other'; sort: number; active: boolean }
 interface Contact { student_id: string; name: string; phone: string; relation: string; sort: number }
 interface Draft { status: Invoice['status']; paid: string; via: string; receiptNo: string; issued: boolean; date: string; memo: string }
@@ -42,6 +45,7 @@ export default function BillingTable({ invoices, period, students, items, member
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
   const [methodSheet, setMethodSheet] = useState(false)
+  const [receiptFor, setReceiptFor] = useState<Inv | null>(null)
 
   const loadMethods = async (): Promise<void> => {
     const { data, error } = await supabase.from('pay_methods').select('*').order('sort')
@@ -131,7 +135,7 @@ export default function BillingTable({ invoices, period, students, items, member
       Object.assign(p, { status: 'unpaid', paid_amount: null, paid_method: null, paid_at: null })
       if (i.status === 'reported') Object.assign(p, { reported_at: null, reported_payer: null })
     } else if (d.status === 'canceled') p.status = 'canceled'
-    if (v9) Object.assign(p, { paid_via: d.status === 'paid' ? d.via : '', receipt_no: d.receiptNo, receipt_issued: d.issued })
+    if (v9) Object.assign(p, { paid_via: d.status === 'paid' ? d.via : '', receipt_no: d.receiptNo })   // 발급 여부는 현금영수증 창에서만 바꿈
     return p
   }
   const save = async (list: Inv[]): Promise<void> => {
@@ -179,11 +183,11 @@ export default function BillingTable({ invoices, period, students, items, member
     setMsg(error ? '실패: ' + errText(error) : `🔔 ${data}건 납부 알림을 보냈어요.`)
   }
   const exportCsv = (): void => {
-    const head = ['NO', '학생번호', '이름', '부', '반', '부모1', '부모1 연락처', '종류', '수납항목', '납부할금액', '수납액', '수납상태', '미납액', '현금영수증번호', '현금영수증발행', '결제방법', '수납일', '비고']
+    const head = ['NO', '학생번호', '이름', '부', '반', '부모1', '부모1 연락처', '종류', '수납항목', '납부할금액', '수납액', '수납상태', '미납액', '현금영수증번호', '현금영수증(승인번호)', '결제방법', '수납일', '비고']
     const body = rows.map((i, n) => {
       const s = stu.get(i.student_id); const p = parentOf(i.student_id); const d = draftOf(i)
       return [n + 1, s?.student_no || s?.code || '', s?.name ?? '', s?.session_no ? `${s.session_no}부` : '', s?.class_name ?? '', p ? `${p.name}${p.relation ? `(${p.relation})` : ''}` : '', p?.phone ?? '',
-        isBase(i) ? '기본' : '기타', itemLabel(i.item_name, i.period), i.amount, paidOf(i), ST_LABEL[d.status], restOf(i), d.receiptNo, d.issued ? '발행완료' : '', d.status === 'paid' ? d.via : '', d.date, d.memo]
+        isBase(i) ? '기본' : '기타', itemLabel(i.item_name, i.period), i.amount, paidOf(i), ST_LABEL[d.status], restOf(i), d.receiptNo, i.receipt_issued ? `발급 ${i.receipt_approval ?? ''}` : '', d.status === 'paid' ? d.via : '', d.date, d.memo]
     })
     const csv = [head, ['', '', '합계', '', '', '', '', '', '', totals.amount, totals.paid, '', totals.rest], ...body]
       .map((r) => r.map((c) => { const t = String(c ?? ''); return /[",\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t }).join(',')).join('\r\n')
@@ -243,7 +247,7 @@ export default function BillingTable({ invoices, period, students, items, member
             <tr>
               <th><input type="checkbox" checked={allOn} onChange={() => setSel(allOn ? new Set() : new Set(rows.map((i) => i.id)))} /></th>
               <th>NO</th><th>학생번호</th><th>이름</th><th>반</th><th>부모1</th><th>종류</th><th>수납항목</th>
-              <th>납부할금액</th><th>수납액</th><th>수납상태</th><th>미납액</th><th>현금영수증 번호</th><th>발행</th>
+              <th>납부할금액</th><th>수납액</th><th>수납상태</th><th>미납액</th><th>현금영수증 번호</th><th>현금영수증</th>
               <th>결제방법</th><th>수납일</th><th>비고</th><th>저장</th>
             </tr>
             <tr className="bt-total">
@@ -280,9 +284,13 @@ export default function BillingTable({ invoices, period, students, items, member
                   <td className={`num ${restOf(i) ? 'danger' : ''}`}>{fmt(restOf(i))}</td>
                   <td><input disabled={locked || !v9} placeholder={p?.phone ?? ''} value={d.receiptNo} onChange={(e) => edit(i, { receiptNo: e.target.value })} /></td>
                   <td>
-                    <button className={`small-btn ${d.issued ? 'issued' : 'ghost'}`} disabled={locked || !v9} onClick={() => edit(i, { issued: !d.issued, receiptNo: d.receiptNo || (!d.issued ? p?.phone ?? '' : '') })}>
-                      {d.issued ? '발행완료' : '발행'}
-                    </button>
+                    {i.receipt_issued ? (
+                      <button className="small-btn issued" onClick={() => setReceiptFor(i)} title={i.receipt_approval ? `승인번호 ${i.receipt_approval}` : ''}>
+                        ✅ 발급{i.receipt_approval ? <div className="tiny">{i.receipt_approval}</div> : null}
+                      </button>
+                    ) : i.status === 'paid' ? (
+                      <button className={`small-btn ${needsReceipt(i) ? 'need' : 'ghost'}`} disabled={!v9} onClick={() => setReceiptFor(i)}>{needsReceipt(i) ? '🧾 발급 필요' : '발급'}</button>
+                    ) : <span className="muted">-</span>}
                   </td>
                   <td>
                     <select disabled={locked || d.status !== 'paid'} value={d.via} onChange={(e) => edit(i, { via: e.target.value })}>
@@ -300,7 +308,8 @@ export default function BillingTable({ invoices, period, students, items, member
           </tbody>
         </table>
       </div>
-      <p className="muted small">노란 줄 = 아직 저장 안 한 줄 · 현금영수증 번호가 비어 있으면 [발행]을 누를 때 부모1 번호로 채워져요.</p>
+      <p className="muted small">노란 줄 = 아직 저장 안 한 줄 · <b>🧾 발급 필요</b> = 현금·계좌이체 10만 원 이상인데 현금영수증을 아직 안 낸 건이에요.</p>
+      {receiptFor && <ReceiptSheet invoice={receiptFor} studentName={stu.get(receiptFor.student_id)?.name ?? ''} defaultNo={draftOf(receiptFor).receiptNo || parentOf(receiptFor.student_id)?.phone || ''} onClose={() => setReceiptFor(null)} />}
 
       {methodSheet && <MethodSheet methods={methods} v9={v9} member={member} onClose={() => { setMethodSheet(false); loadMethods() }} />}
     </div>
@@ -350,6 +359,111 @@ function MethodSheet({ methods, v9, member, onClose }: { methods: PayMethod[]; v
             {msg && <div className="error">{msg}</div>}
           </div>
         )}
+      </div>
+    </div>
+  )
+}
+
+/* ---------------- 현금영수증: 강철노트에서 바로 발급 / 직접 발급한 승인번호 기록 ---------------- */
+
+/** 현금영수증을 꼭 내야 하는 건: 현금·계좌이체로 10만 원 이상 받았는데 아직 미발급 */
+export const needsReceipt = (i: Inv): boolean =>
+  i.status === 'paid' && !i.receipt_issued && (i.paid_method === 'transfer' || i.paid_method === 'cash') && Number(i.paid_amount ?? i.amount) >= 100000
+export const daysSincePaid = (i: Inv): number => (i.paid_at ? Math.floor((Date.now() - Date.parse(i.paid_at)) / 86400_000) : 0)
+
+export function ReceiptSheet({ invoice: i, studentName, defaultNo, onClose }: { invoice: Inv; studentName: string; defaultNo: string; onClose(): void }): JSX.Element {
+  const [no, setNo] = useState(i.receipt_no || defaultNo)
+  const [type, setType] = useState<'소득공제' | '지출증빙'>(i.receipt_type === '지출증빙' ? '지출증빙' : '소득공제')
+  const [manual, setManual] = useState(false)
+  const [approval, setApproval] = useState('')
+  const [how, setHow] = useState('단말기')
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState<string | null>(null)
+  const amount = Number(i.paid_amount ?? i.amount)
+  useEffect(() => {
+    if (no) return
+    supabase.from('student_contacts').select('phone').eq('student_id', i.student_id).order('sort').limit(1)
+      .then(({ data }) => { const ph = (data as { phone: string }[] | null)?.[0]?.phone; if (ph) setNo(ph) })
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const call = async (action: 'issue' | 'cancel'): Promise<void> => {
+    setBusy(true); setMsg(null)
+    const { data, error } = await supabase.functions.invoke('cash-receipt', { body: { invoiceId: i.id, action, identity: no, type } })
+    let err = (data as { error?: string } | null)?.error
+    if (error) {
+      const ctx = (error as { context?: Response }).context
+      const j = ctx ? await ctx.json().catch(() => null) : null
+      err = j?.error ?? errText(error)
+    }
+    setBusy(false)
+    if (err) {
+      setMsg(err === 'no_secret' ? '토스페이먼츠 시크릿 키가 아직 없어요. 아래 "직접 발급했어요"로 기록하거나, 설정을 마쳐 주세요.'
+        : err === 'bad_identity' ? '번호를 확인해 주세요. (휴대폰 번호, 사업자번호, 현금영수증카드 번호)'
+          : err === 'not_auto' ? '단말기·홈택스로 발급한 건은 거기서 취소한 뒤 "발급 표시 지우기"를 눌러 주세요.'
+            : /Failed to send|FunctionsFetchError|404/i.test(err) ? '자동 발급 기능(cash-receipt 함수)이 아직 설치 전이에요. 아래 "직접 발급했어요"로 기록할 수 있어요.'
+              : '발급 실패: ' + err)
+      return
+    }
+    setMsg(action === 'issue' ? `✅ 국세청에 발급했어요.${(data as { approval?: string }).approval ? ` 승인번호 ${(data as { approval?: string }).approval}` : ''}` : '✅ 발급을 취소했어요.')
+    window.setTimeout(onClose, 1200)
+  }
+  const saveManual = async (): Promise<void> => {
+    if (!approval.trim()) return setMsg('승인번호를 적어 주세요.')
+    setBusy(true)
+    const { error } = await supabase.from('invoices').update({
+      receipt_issued: true, receipt_no: no.replace(/\D/g, ''), receipt_type: type, receipt_approval: approval.trim(),
+      receipt_at: new Date().toISOString(), receipt_how: how, receipt_key: null, receipt_url: null
+    }).eq('id', i.id)
+    setBusy(false)
+    if (error) return setMsg(/receipt_/.test(error.message) ? 'Supabase에서 schema-v21-cash-receipt.sql 을 먼저 실행해 주세요.' : '저장 실패: ' + errText(error))
+    onClose()
+  }
+  const clearMark = async (): Promise<void> => {
+    if (!window.confirm('발급 표시를 지울까요? (국세청 발급 취소는 단말기·홈택스에서 직접 해야 해요)')) return
+    await supabase.from('invoices').update({ receipt_issued: false, receipt_approval: '', receipt_at: null, receipt_how: '' }).eq('id', i.id)
+    onClose()
+  }
+
+  return (
+    <div className="sheet-bg" onClick={onClose}>
+      <div className="sheet" onClick={(e) => e.stopPropagation()}>
+        <div className="sheet-head"><h2>🧾 현금영수증</h2><button className="ghost" onClick={onClose}>✕</button></div>
+        <div className="form">
+          <div className="report-sum"><span>{studentName} · {itemLabel(i.item_name, i.period)}</span><b>{won(amount)}</b></div>
+          {i.receipt_issued ? (
+            <>
+              <div className="notice-ok">
+                ✅ 발급됨 · {i.receipt_type || '소득공제'} · {i.receipt_no}<br />
+                승인번호 <b>{i.receipt_approval || '-'}</b> · {i.receipt_how || ''}{i.receipt_at ? ` · ${new Date(i.receipt_at).toLocaleDateString('ko-KR', { timeZone: 'Asia/Seoul' })}` : ''}
+              </div>
+              {i.receipt_url && <a className="btn" href={i.receipt_url} target="_blank" rel="noreferrer">영수증 보기</a>}
+              {i.receipt_key
+                ? <button className="ghost danger" disabled={busy} onClick={() => window.confirm('국세청 발급을 취소할까요?') && call('cancel')}>발급 취소</button>
+                : <button className="ghost danger" onClick={clearMark}>발급 표시 지우기</button>}
+            </>
+          ) : (
+            <>
+              <label>발급 번호 <span className="hint">학부모 휴대폰 번호 (사업자면 사업자번호)</span>
+                <input inputMode="numeric" value={no} onChange={(e) => setNo(e.target.value)} placeholder="010-0000-0000" />
+              </label>
+              <div className="seg">
+                <button className={type === '소득공제' ? 'on' : ''} onClick={() => setType('소득공제')}>소득공제 (개인)</button>
+                <button className={type === '지출증빙' ? 'on' : ''} onClick={() => setType('지출증빙')}>지출증빙 (사업자)</button>
+              </div>
+              <button className="primary big" disabled={busy} onClick={() => call('issue')}>{busy ? '발급 중…' : '🧾 국세청에 바로 발급'}</button>
+              <button className="ghost small-btn" onClick={() => setManual(!manual)}>{manual ? '▲' : '▼'} 단말기·홈택스로 직접 발급했어요</button>
+              {manual && (
+                <div className="form">
+                  <label>승인번호<input value={approval} onChange={(e) => setApproval(e.target.value)} placeholder="영수증에 적힌 승인번호" /></label>
+                  <select value={how} onChange={(e) => setHow(e.target.value)}><option>단말기</option><option>홈택스</option><option>기타</option></select>
+                  <button disabled={busy} onClick={saveManual}>승인번호 저장</button>
+                </div>
+              )}
+            </>
+          )}
+          {msg && <div className={msg.startsWith('✅') ? 'notice-ok' : 'error'}>{msg}</div>}
+          <p className="muted tiny">교육비(수련비 등)는 면세로 발급돼요. 의무발행 기준(현금 10만 원 이상, 5일 안 발급)은 세무사님께 한 번 확인해 주세요.</p>
+        </div>
       </div>
     </div>
   )
