@@ -319,7 +319,7 @@ function PaySheet({ invoices, bank, ep, kidName, onClose, onReport, onCopied, on
   const easy = !!ep?.on                       // 이지페이가 켜져 있으면 카드 결제는 이지페이로
   const online = !easy && !!bank.toss_client_key
   const local = bank.local_pay ?? ''
-  const [kind, setKind] = useState<PayKind>(easy ? 'ep_card' : online ? 'card' : 'bank')
+  const [kind, setKind] = useState<PayKind>('bank')   // 기본은 계좌이체(수수료 없음)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const total = invoices.reduce((s, i) => s + i.amount, 0)
@@ -396,10 +396,10 @@ function PaySheet({ invoices, bank, ep, kidName, onClose, onReport, onCopied, on
   }
 
   const opts: [PayKind, string, string][] = [
+    ['bank', '🏦', t.payBank],
     ...(easy ? [['ep_card', '💳', t.payCard]] as [PayKind, string, string][] : []),
     ...(easy && ep?.vbank ? [['ep_vbank', '🏧', t.payVbank]] as [PayKind, string, string][] : []),
     ...(online ? [['card', '💳', t.payCard], ['tosspay', '🔵', t.payTossPay]] as [PayKind, string, string][] : []),
-    ['bank', '🏦', t.payBank],
     ...(local ? [['local', '🏪', t.payLocal.replace('{name}', local)]] as [PayKind, string, string][] : [])
   ]
   return (
