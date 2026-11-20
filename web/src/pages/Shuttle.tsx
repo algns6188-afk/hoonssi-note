@@ -5,7 +5,7 @@ import { addressQuery, geocode, type Area } from '../mapAdapter'
 
 /* ---------------- 데이터 ---------------- */
 
-export interface Vehicle { id: string; name: string; plate: string; capacity: number; active: boolean; gps_token?: string | null; gps_last_at?: string | null }
+export interface Vehicle { id: string; name: string; plate: string; capacity: number; active: boolean; gps_token?: string | null; gps_last_at?: string | null; last_device_id?: string | null }
 export interface Stop { id: string; name: string; parent_name?: string | null; address: string; wait_note: string; lat: number | null; lng: number | null; active: boolean }
 /** 정류장 이름: 학부모 화면이면 학부모용 이름(없으면 관리자 이름과 같음) */
 export const stopLabel = (s: Stop | undefined, parent?: boolean): string => (s ? (parent && s.parent_name ? s.parent_name : s.name) : '')
@@ -25,6 +25,7 @@ export interface ShuttleData {
   vehicles: Vehicle[]; stops: Stop[]; runs: Run[]; runStops: RunStop[]; rides: Ride[]
   exceptions: RideException[]; requests: RideRequest[]; requestsOk: boolean
   areas: Area[]; areasOk: boolean
+  devices: Device[]   // 차량 위치 기기 (직원만 보임)
 }
 /** 이 요일의 가장 가까운 날짜 (오늘 포함) */
 export function nextDateOf(d: string): string {
@@ -95,7 +96,7 @@ export function ridersAt(data: ShuttleData, rs: RunStop, run: Run, d: string): R
 export async function loadShuttle(): Promise<ShuttleData> {
   const from = new Date(Date.now() + 9 * 3600_000 - 86400_000).toISOString().slice(0, 10)
   const since = new Date(Date.now() - 14 * 86400_000).toISOString()
-  const [v, s, r, rs, ra, ex, rq, ar] = await Promise.all([
+  const [v, s, r, rs, ra, ex, rq, ar, dv] = await Promise.all([
     supabase.from('vehicles').select('*').order('name'),
     supabase.from('stops').select('*').order('name'),
     supabase.from('runs').select('*').order('sort'),
@@ -103,13 +104,15 @@ export async function loadShuttle(): Promise<ShuttleData> {
     supabase.from('ride_assignments').select('*'),
     supabase.from('ride_exceptions').select('*').gte('date', from),
     supabase.from('ride_requests').select('*').or(`status.eq.pending,created_at.gte.${since}`).order('created_at', { ascending: false }),
-    supabase.from('shuttle_areas').select('*').order('created_at')
+    supabase.from('shuttle_areas').select('*').order('created_at'),
+    supabase.from('vehicle_devices').select('*').order('created_at')
   ])
   return {
     vehicles: (v.data as Vehicle[]) ?? [], stops: (s.data as Stop[]) ?? [], runs: (r.data as Run[]) ?? [],
     runStops: (rs.data as RunStop[]) ?? [], rides: (ra.data as Ride[]) ?? [],
     exceptions: (ex.data as RideException[]) ?? [], requests: (rq.data as RideRequest[]) ?? [], requestsOk: !rq.error,
-    areas: (ar.data as Area[]) ?? [], areasOk: !ar.error
+    areas: (ar.data as Area[]) ?? [], areasOk: !ar.error,
+    devices: dv.error ? [] : (dv.data as Device[]) ?? []
   }
 }
 
@@ -133,7 +136,7 @@ export default function ShuttleTab({ students, member }: { students: Student[]; 
   useEffect(() => {
     load()
     const ch = supabase.channel('shuttle-admin')
-    for (const t of ['runs', 'run_stops', 'ride_assignments', 'stops', 'vehicles', 'ride_requests', 'ride_exceptions']) ch.on('postgres_changes', { event: '*', schema: 'public', table: t }, () => load())
+    for (const t of ['runs', 'run_stops', 'ride_assignments', 'stops', 'vehicles', 'ride_requests', 'ride_exceptions', 'vehicle_devices']) ch.on('postgres_changes', { event: '*', schema: 'public', table: t }, () => load())
     ch.subscribe()
     return () => void supabase.removeChannel(ch)
   }, [load])
@@ -261,25 +264,51 @@ export default function ShuttleTab({ students, member }: { students: Student[]; 
                   const endT = run.kind !== 'to' && run.session_no ? SESSION_END[run.session_no] : undefined
                   const startBase = endT && (!first || endT < first.slice(0, 5)) ? endT : first
                   const running = !!trip && !trip.ended_at
-                  const tripCall = async (fn: 'trip_start' | 'trip_end'): Promise<void> => {
+                  const tripCall = async (fn: 'trip_start' | 'trip_end', device?: Device): Promise<void> => {
                     if (fn === 'trip_end' && !window.confirm(`${run.name} 운행을 끝낼까요? 학부모 화면에서 차량 위치가 사라져요.`)) return
-                    const { error } = await supabase.rpc(fn, { p_run: run.id })
+                    let { error } = await supabase.rpc(fn, fn === 'trip_start' && device ? { p_run: run.id, p_device: device.id } : { p_run: run.id })
+                    if (error && device && /p_device|function/.test(error.message)) {
+                      alert('기기를 골라 시작하려면 Supabase에서 schema-v23-trip-device.sql 을 실행해 주세요. 지금은 기기 지정 없이 시작할게요.')
+                      ;({ error } = await supabase.rpc(fn, { p_run: run.id }))
+                    }
                     if (error) alert(/trip_(start|end)/.test(error.message) ? '직접 시작·종료는 Supabase에서 schema-v19-trip-auto-manual.sql 을 실행한 뒤 쓸 수 있어요.' : '실패: ' + errText(error))
+                    else if (device) await load()
                   }
+                  // 이 운행 차량의 위치 기기들 (마지막으로 GPS 잡았던 기기가 맨 앞)
+                  const vehId = run.vehicle_id ?? (data.vehicles.length === 1 ? data.vehicles[0].id : null)
+                  const veh = data.vehicles.find((x) => x.id === vehId)
+                  const devs = data.devices.filter((d) => !vehId || d.vehicle_id === vehId)
+                    .sort((a, b) => (a.id === veh?.last_device_id ? -1 : b.id === veh?.last_device_id ? 1 : (b.last_at ?? '').localeCompare(a.last_at ?? '')))
+                  const lastDev = devs.find((d) => d.id === veh?.last_device_id) ?? null
+                  const tripDev = trip?.device_id ? data.devices.find((d) => d.id === trip.device_id) : null
                   return (
                     <div className="trip-ctl">
                       <div className="small">
                         {running
-                          ? <><b className="ok">● 운행 중</b> <span className="muted">({trip!.manual ? '직접 시작 · 직접 종료할 때까지' : `자동 · ${shift(lastT, 10)}에 자동 종료`})</span></>
+                          ? <><b className="ok">● 운행 중</b>{tripDev && <> · 📡 <b>{tripDev.name}</b></>} <span className="muted">({trip!.manual ? '직접 시작 · 직접 종료할 때까지' : `자동 · ${shift(lastT, 10)}에 자동 종료`})</span></>
                           : trip?.ended_at ? <span className="muted">운행 끝 · 위치 공유 안 함</span>
-                            : <span className="muted">자동 시작 {shift(startBase, -5)}{endT ? ` (${run.session_no}부 수업 끝 5분 전)` : ''} · 자동 종료 {shift(lastT, 10)} (GPS 앱이 켜져 있을 때)</span>}
+                            : <span className="muted">자동 시작 {shift(startBase, -5)}{endT ? ` (${run.session_no}부 수업 끝 5분 전)` : ''} · 자동 종료 {shift(lastT, 10)} · {lastDev ? <>📡 <b>{lastDev.name}</b> 기준 (마지막으로 GPS 잡은 기기)</> : '먼저 위치를 보내는 기기 기준'}</span>}
                       </div>
-                      <div className="row">
-                        {running
-                          ? <button className="danger-btn grow" onClick={() => tripCall('trip_end')}>■ 운행 종료</button>
-                          : <button className="primary grow" onClick={() => tripCall('trip_start')}>▶ 지금 운행 시작</button>}
-                        <button className="ghost small-btn" onClick={() => setDriving(run)}>📱 이 폰으로 위치 보내기</button>
-                      </div>
+                      {running ? (
+                        <div className="row">
+                          <button className="danger-btn grow" onClick={() => tripCall('trip_end')}>■ 운행 종료</button>
+                          <button className="ghost small-btn" onClick={() => setDriving(run)}>📱 이 폰으로 위치 보내기</button>
+                        </div>
+                      ) : (
+                        <div className="dev-start">
+                          {devs.length > 0 && <span className="tiny muted">어느 기기 GPS로 운행할까요?</span>}
+                          {devs.map((d) => (
+                            <button key={d.id} className={d.id === lastDev?.id ? 'primary' : ''} onClick={() => tripCall('trip_start', d)}>
+                              <span>▶ <b>{d.name}</b>로 운행 시작</span>
+                              <span className="tiny">{d.id === lastDev?.id ? '⭐ 마지막 GPS 기기 · ' : ''}{d.kind === 'app' ? 'Traccar 앱' : '웹 화면'} · 마지막 위치 {ago(d.last_at)}{d.enabled ? '' : ' · 위치 비허용 → 시작하면 허용'}</span>
+                            </button>
+                          ))}
+                          <div className="row">
+                            {devs.length === 0 && <button className="primary grow" onClick={() => tripCall('trip_start')}>▶ 지금 운행 시작</button>}
+                            <button className="ghost small-btn" onClick={() => setDriving(run)}>📱 이 폰으로 운행 시작</button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )
                 })()}
@@ -693,8 +722,9 @@ function VehiclesSheet({ data, member, onClose, onSaved }: { data: ShuttleData; 
             <button className="veh-head" onClick={() => setOpen(open === v.id ? null : v.id)}>
               <b>🚐 {v.name}</b> <span className="muted small">{v.plate || '번호 없음'} · 정원 {v.capacity}</span>
               {devices && (() => {
-                const on = devices.find((d) => d.vehicle_id === v.id && d.enabled)
-                return <span className={`chip ${on ? 'live' : ''}`}>{on ? `📡 ${on.name}` : '위치 기기 없음'}</span>
+                const last = devices.find((d) => d.vehicle_id === v.id && d.id === v.last_device_id)
+                const n = devices.filter((d) => d.vehicle_id === v.id && d.enabled).length
+                return <span className={`chip ${n ? 'live' : ''}`}>{last ? `⭐ ${last.name}` : n ? `📡 기기 ${n}대` : '위치 기기 없음'}</span>
               })()}
               <span className="muted">{open === v.id ? '▲' : '▼'}</span>
             </button>
@@ -726,16 +756,16 @@ function VehicleBody({ vehicle, data, devices, member, onSaved }: { vehicle: Veh
   const addDevice = async (kind: 'app' | 'web'): Promise<void> => {
     const token = newDeviceToken()
     const label = newName.trim() || (kind === 'app' ? `폰 ${mine.length + 1} (Traccar 앱)` : `폰 ${mine.length + 1} (웹 화면)`)
-    const { data: d, error } = await supabase.from('vehicle_devices').insert({ org_id: member.org_id, vehicle_id: vehicle.id, name: label, kind, token, enabled: false }).select().single()
+    const { data: d, error } = await supabase.from('vehicle_devices').insert({ org_id: member.org_id, vehicle_id: vehicle.id, name: label, kind, token, enabled: true }).select().single()
     if (error) return setMsg('추가 실패: ' + errText(error))
     if (kind === 'web') { try { localStorage.setItem('kc-device-token', token) } catch { /* 없음 */ } }
     setNewName(''); setShown((d as Device).id)
-    setMsg(kind === 'app' ? '✅ 기기를 추가했어요. 아래 서버 URL과 식별자를 그 폰의 Traccar 앱에 넣고, [켜기]를 눌러 주세요.' : '✅ 이 폰을 웹 화면 기기로 등록했어요. [켜기]를 누르면 운행 화면에서 위치를 보내요.')
+    setMsg(kind === 'app' ? '✅ 기기를 추가했어요. 아래 서버 URL과 식별자를 그 폰의 Traccar 앱에 넣어 주세요.' : '✅ 이 폰을 웹 화면 기기로 등록했어요. 운행 화면을 켜 두면 위치를 보내요.')
     await onSaved()
   }
   const toggle = async (d: Device): Promise<void> => {
     const { error } = await supabase.rpc('set_device_enabled', { p_device: d.id, p_on: !d.enabled })
-    setMsg(error ? '실패: ' + errText(error) : !d.enabled ? `✅ ${vehicle.name} 위치는 이제 "${d.name}"에서 받아요. (다른 기기는 꺼짐)` : `"${d.name}" 위치 받기를 껐어요.`)
+    setMsg(error ? '실패: ' + errText(error) : !d.enabled ? `✅ "${d.name}" 위치를 허용했어요.` : `"${d.name}" 위치를 비허용했어요. 이 기기에서 오는 위치는 버려요.`)
     await onSaved()
   }
   const remove = async (d: Device): Promise<void> => {
@@ -776,17 +806,17 @@ function VehicleBody({ vehicle, data, devices, member, onSaved }: { vehicle: Veh
       {devices && (
         <div className="dev-box">
           <h3>📡 위치 보내는 기기</h3>
-          <p className="muted small">이 차량 위치를 어떤 폰에서 받을지 정해요. <b>켜진 기기 하나</b>의 위치만 받아요. 다른 폰으로 바꾸려면 그 폰의 [켜기]를 누르세요.</p>
+          <p className="muted small">운행마다 <b>한 기기</b>의 GPS만 써요. 직접 시작할 땐 차량표에서 <b>[▶ 기기 이름으로 운행 시작]</b>을 고르고, 자동 시작은 <b>⭐ 마지막으로 GPS를 잡았던 기기</b> 기준이에요(그 기기 신호가 3분 넘게 끊기면 위치를 보내는 다른 허용 기기로 넘어가요). 비허용한 기기의 위치는 버려요.</p>
           {mine.length === 0 && <p className="small">아직 등록된 기기가 없어요. 아래에서 추가하세요.</p>}
           <ul className="plain dev-list">
             {mine.map((d) => (
               <li key={d.id} className={d.enabled ? 'on' : ''}>
                 <div className="row">
                   <div className="grow">
-                    <b>{d.name}</b>{myToken === d.token && <span className="chip">이 폰</span>}
+                    <b>{d.name}</b>{myToken === d.token && <span className="chip">이 폰</span>}{d.id === vehicle.last_device_id && <span className="chip live">⭐ 마지막 GPS 기기</span>}
                     <div className="muted tiny">{d.kind === 'app' ? 'Traccar 앱 · 화면 꺼져도 됨' : '강철노트 화면 · 운행 화면을 켜 둬야 함'} · 마지막 위치 {ago(d.last_at)}</div>
                   </div>
-                  <button className={d.enabled ? 'dev-on' : 'dev-off'} onClick={() => toggle(d)}>{d.enabled ? '● 위치 받는 중 (끄기)' : '켜기'}</button>
+                  <button className={d.enabled ? 'dev-on' : 'dev-off'} onClick={() => toggle(d)}>{d.enabled ? '● 위치 허용 (비허용으로)' : '○ 비허용 (허용으로)'}</button>
                 </div>
                 <div className="row dev-actions">
                   {d.kind === 'app' && <button className="ghost small-btn" onClick={() => setShown(shown === d.id ? null : d.id)}>{shown === d.id ? '설정값 닫기' : 'Traccar 설정값 보기'}</button>}
@@ -799,7 +829,7 @@ function VehicleBody({ vehicle, data, devices, member, onSaved }: { vehicle: Veh
                     <li><b>서버 URL</b> <code>{GPS_URL}</code> <button className="small-btn" onClick={() => copy(GPS_URL)}>복사</button></li>
                     <li><b>기기 식별자</b> <code>{d.token}</code> <button className="small-btn" onClick={() => copy(d.token)}>복사</button></li>
                     <li>위치 정확도 높음 · 간격 10초 · 폰 설정에서 위치 "항상" 허용</li>
-                    <li>앱 첫 화면 <b>연속 추적</b> 켜기 → 여기서 <b>[켜기]</b></li>
+                    <li>앱 첫 화면 <b>연속 추적</b> 켜기</li>
                   </ol>
                 )}
               </li>

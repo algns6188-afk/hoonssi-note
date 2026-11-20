@@ -798,3 +798,8 @@ a.btn.call { background: var(--in-soft); padding: 8px 10px; }
 .file-btn input { display: none; }
 .dm-table tr.dm-miss td { background: #fff8e1; }
 .dm-table select { max-width: 220px; }
+/* 기기 골라 운행 시작 */
+.dev-start { display: flex; flex-direction: column; gap: 6px; }
+.dev-start > button { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left; padding: 10px 12px; }
+.dev-start > button .tiny { opacity: .8; font-weight: 400; }
+.dev-start .row { gap: 8px; }

@@ -12,6 +12,7 @@ export interface Trip {
   passed: Record<string, string>
   kid_done?: boolean   // 학부모: 우리 아이 정류장을 다 지남 → 차량 위치 안 보여 줌
   manual?: boolean     // 관리자가 직접 시작한 운행
+  device_id?: string | null   // 이 운행 위치를 받는 기기
 }
 export interface Place { name: string; lat: number | null; lng: number | null }
 
@@ -292,7 +293,7 @@ export function DriverMode({ data, run, day, place, orgId, onExit }: { data: Shu
       return checkDevice()
     }
     const tk = token && token.length >= 12 ? token : 'kc' + Array.from(crypto.getRandomValues(new Uint8Array(12)), (b) => b.toString(36).padStart(2, '0')).join('').slice(0, 18)
-    const { data: d, error } = await supabase.from('vehicle_devices').insert({ org_id: orgId, vehicle_id: vehicleId, name: devName.trim() || '운행 폰 (웹 화면)', kind: 'web', token: tk, enabled: false }).select('id').single()
+    const { data: d, error } = await supabase.from('vehicle_devices').insert({ org_id: orgId, vehicle_id: vehicleId, name: devName.trim() || '운행 폰 (웹 화면)', kind: 'web', token: tk, enabled: true }).select('id').single()
     if (error) return setErr('등록 실패: ' + errText(error))
     try { localStorage.setItem('kc-device-token', tk) } catch { /* 없음 */ }
     await supabase.rpc('set_device_enabled', { p_device: (d as { id: string }).id, p_on: true })
@@ -304,11 +305,14 @@ export function DriverMode({ data, run, day, place, orgId, onExit }: { data: Shu
     checkDevice()
   }
 
-  // 운행 시작 (직접 시작으로 기록 · 오늘 이미 시작했으면 이어서)
+  // 운행 시작 (직접 시작 · 이 폰이 위치 기기면 이 폰 GPS로 · 오늘 이미 시작했으면 이어서)
+  const startDev = dev.state === 'on' ? dev.id ?? null : null
   useEffect(() => {
+    if (dev.state === 'loading') return
     (async () => {
       const today = kstDate()
-      const { error: e1 } = await supabase.rpc('trip_start', { p_run: run.id })
+      let { error: e1 } = await supabase.rpc('trip_start', startDev ? { p_run: run.id, p_device: startDev } : { p_run: run.id })
+      if (e1 && startDev) ({ error: e1 } = await supabase.rpc('trip_start', { p_run: run.id }))   // v23 전
       if (e1) {
         // v19 전: 예전 방식
         const { data: ex } = await supabase.from('shuttle_trips').select('*').eq('run_id', run.id).eq('day', today).maybeSingle()
@@ -325,7 +329,7 @@ export function DriverMode({ data, run, day, place, orgId, onExit }: { data: Shu
       const { data: t } = await supabase.from('shuttle_trips').select('*').eq('run_id', run.id).eq('day', today).maybeSingle()
       setTrip(t as Trip)
     })()
-  }, [run.id])
+  }, [run.id, startDev, dev.state === 'loading']) // eslint-disable-line react-hooks/exhaustive-deps
 
   // 화면 꺼짐 방지
   useEffect(() => {
@@ -356,7 +360,8 @@ export function DriverMode({ data, run, day, place, orgId, onExit }: { data: Shu
           ? await supabase.rpc('shuttle_web_ping', { p_token: devRef.current.token, p_lat: g.lat, p_lng: g.lng, p_speed: g.speed })
           : await supabase.rpc('shuttle_ping', { p_trip: trip.id, p_lat: g.lat, p_lng: g.lng, p_speed: g.speed })
         if (error) setErr('위치 전송 실패: ' + errText(error))
-        else if ((r as { ignored?: string })?.ignored === 'device_off') { setErr('이 폰은 위치 받기가 꺼져 있어요.'); checkDevice() }
+        else if ((r as { ignored?: string })?.ignored === 'device_off') { setErr('이 폰은 위치 비허용 상태예요.'); checkDevice() }
+        else if ((r as { ignored?: string })?.ignored === 'other_device') setErr('이 운행은 다른 기기 GPS로 시작돼 있어요. 이 폰 위치는 쓰지 않아요. (이 폰으로 바꾸려면 운행을 끝내고 이 화면에서 다시 시작)')
         else {
           setSent(Date.now())
           const passed = (r as { passed?: Record<string, string> })?.passed
@@ -403,11 +408,11 @@ export function DriverMode({ data, run, day, place, orgId, onExit }: { data: Shu
           </>
         ) : <b>📡 위치를 찾는 중… (위치 권한을 "허용"해 주세요)</b>}
       </div>
-      {dev.state === 'on' && <p className="small ok">✅ 이 폰({dev.name})이 {vehicleName} 위치를 보내고 있어요.</p>}
+      {dev.state === 'on' && <p className="small ok">✅ 이 운행은 이 폰({dev.name}) GPS로 위치를 보내요. 다른 기기 위치는 이 운행에 안 써요.</p>}
       {(dev.state === 'none' || dev.state === 'other') && (
         <div className="dev-ask">
           <b>📱 이 폰을 {vehicleName} 위치 기기로 쓸까요?</b>
-          <span className="small muted">{dev.state === 'other' ? `이 폰은 다른 차량(${dev.name})에 등록돼 있어요.` : '등록하면 이 화면을 켜 둔 동안 위치를 보내요. (다른 기기는 자동으로 꺼져요)'}</span>
+          <span className="small muted">{dev.state === 'other' ? `이 폰은 다른 차량(${dev.name})에 등록돼 있어요.` : '등록하면 이 운행은 이 폰 GPS로 위치를 보내요. (이 화면을 켜 둔 동안)'}</span>
           {dev.state === 'none' && <input placeholder="이 폰 이름 (예: 기사님 아이폰)" value={devName} onChange={(e) => setDevName(e.target.value)} />}
           <button className="primary" onClick={registerHere}>{dev.state === 'other' ? `이 폰을 ${vehicleName}로 옮기고 켜기` : '등록하고 위치 보내기'}</button>
           <span className="tiny muted">위치를 다른 폰(Traccar 앱 등)에서 받고 있다면 등록하지 않아도 돼요. 정류장은 아래에서 직접 눌러 표시할 수 있어요.</span>
@@ -415,9 +420,9 @@ export function DriverMode({ data, run, day, place, orgId, onExit }: { data: Shu
       )}
       {dev.state === 'off' && (
         <div className="dev-ask">
-          <b>📴 이 폰({dev.name})은 위치 받기가 꺼져 있어요</b>
-          <span className="small muted">지금은 다른 기기에서 {vehicleName} 위치를 받고 있을 수 있어요.</span>
-          <button className="primary" onClick={turnOn}>이 폰으로 바꾸기 (켜기)</button>
+          <b>📴 이 폰({dev.name})은 위치 비허용 상태예요</b>
+          <span className="small muted">허용하면 이 운행을 이 폰 GPS로 보내요.</span>
+          <button className="primary" onClick={turnOn}>허용하고 이 폰으로 운행</button>
         </div>
       )}
       {err === 'PERM' ? (
