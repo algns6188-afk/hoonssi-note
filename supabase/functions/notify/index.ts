@@ -165,21 +165,56 @@ const BILL: Record<Lang, { created: (n: string, x: string) => string; paid: (n: 
   en: { created: (n, x) => `💳 ${n}: ${x} bill`, paid: (n, x) => `✅ ${n}: payment confirmed — ${x}`, due: (d) => `due ${d}` }
 }
 
+const REFUND: Record<Lang, (n: string, x: string) => string> = {
+  ko: (n, x) => `↩️ ${n} ${x} 카드 결제가 취소(환불)됐어요`,
+  zh: (n, x) => `↩️ ${n} ${x}刷卡付款已取消（退款）`,
+  ru: (n, x) => `↩️ ${n}: оплата картой отменена (возврат) — ${x}`,
+  en: (n, x) => `↩️ ${n}: card payment canceled (refunded) — ${x}`
+}
+
+/** 도장 직원(관리자·선생님)들의 알림 기기 */
+async function staffDevices(orgId: string): Promise<Sub[]> {
+  const { data: ms } = await db.from('members').select('user_id,role').eq('org_id', orgId)
+  const ids = (ms ?? []).filter((m) => m.role !== 'parent' && m.role !== 'kiosk').map((m) => m.user_id as string)
+  if (!ids.length) return []
+  const { data: subs } = await db.from('push_subscriptions').select('*').in('user_id', ids)
+  return (subs as Sub[]) ?? []
+}
+
 async function invoiceNotice(id: string, event: string) {
-  if (event !== 'created' && event !== 'paid') return { sent: 0, reason: 'event' }
-  const { data: inv, error } = await db.from('invoices').select('id,student_id,item_name,period,amount,due_date,paid_amount').eq('id', id).maybeSingle()
+  if (!['created', 'paid', 'reported', 'refund'].includes(event)) return { sent: 0, reason: 'event' }
+  const { data: inv, error } = await db.from('invoices').select('id,org_id,student_id,item_name,period,amount,due_date,paid_amount,paid_via,reported_payer').eq('id', id).maybeSingle()
   if (error) return { error: 'db', detail: error.message }
   if (!inv) return { error: 'not found' }
   const { data: student } = await db.from('students').select('name').eq('id', inv.student_id).maybeSingle()
-  const target = await guardianDevices(inv.student_id)
-  if ('reason' in target) return { sent: 0, reason: target.reason }
   const name = student?.name ?? ''
-  return sendAll(target.subs, (s) => {
-    const l = lang(target.langOf.get(s.user_id) ?? s.lang)
-    const x = itemLabel(inv.item_name, inv.period, l)
-    const amount = money(event === 'paid' ? inv.paid_amount ?? inv.amount : inv.amount, l)
-    return event === 'created'
-      ? { title: BILL[l].created(name, x), body: amount + (inv.due_date ? ` · ${BILL[l].due(md(inv.due_date, l))}` : ''), tag: `bill-${inv.id}` }
-      : { title: BILL[l].paid(name, x), body: amount, tag: `bill-${inv.id}` }
-  })
+  const out: Record<string, unknown> = {}
+
+  // 도장 폰: 학부모가 온라인 결제·입금 신고했을 때, 카드 결제 취소됐을 때
+  const online = event === 'paid' && String(inv.paid_via ?? '').includes('이지페이')
+  if (online || event === 'reported' || event === 'refund') {
+    const staff = await staffDevices(inv.org_id)
+    const x = itemLabel(inv.item_name, inv.period, 'ko')
+    const amt = money(inv.paid_amount ?? inv.amount, 'ko')
+    out.staff = staff.length ? await sendAll(staff, () => (
+      event === 'reported' ? { title: `🏦 ${name} ${x} 입금했어요`, body: `${money(inv.amount, 'ko')}${inv.reported_payer ? ` · 입금자 ${inv.reported_payer}` : ''} · 확인해 주세요`, tag: `staff-bill-${inv.id}` }
+        : event === 'refund' ? { title: `↩️ ${name} ${x} 카드 결제 취소`, body: `${money(inv.amount, 'ko')} 환불 · 다시 미납이에요`, tag: `staff-bill-${inv.id}` }
+          : { title: `💳 ${name} ${x} 결제됐어요`, body: `${amt} · ${inv.paid_via}`, tag: `staff-bill-${inv.id}` }
+    )) : { sent: 0, reason: 'no staff devices' }
+  }
+
+  // 학부모 폰: 청구됐을 때, 납부 확인됐을 때, 카드 결제 취소됐을 때
+  if (event !== 'reported') {
+    const target = await guardianDevices(inv.student_id)
+    out.parents = 'reason' in target ? { sent: 0, reason: target.reason } : await sendAll(target.subs, (s) => {
+      const l = lang(target.langOf.get(s.user_id) ?? s.lang)
+      const x = itemLabel(inv.item_name, inv.period, l)
+      const amount = money(event === 'paid' ? inv.paid_amount ?? inv.amount : inv.amount, l)
+      return event === 'created'
+        ? { title: BILL[l].created(name, x), body: amount + (inv.due_date ? ` · ${BILL[l].due(md(inv.due_date, l))}` : ''), tag: `bill-${inv.id}` }
+        : event === 'refund' ? { title: REFUND[l](name, x), body: amount, tag: `bill-${inv.id}` }
+          : { title: BILL[l].paid(name, x), body: amount, tag: `bill-${inv.id}` }
+    })
+  }
+  return out
 }

@@ -13,6 +13,7 @@ import ShuttleTab, { ShuttleAreasPage } from './Shuttle'
 import { DailyBook, MonthlyBook } from './AttendanceBook'
 import { InstallBanner, InstallGuide } from '../install'
 import { downloadBackup, lastBackupDays } from '../backup'
+import { NotifyCard } from '../notifyCard'
 
 type Tab = 'today' | 'students' | 'billing' | 'shuttle' | 'timeline' | 'more'
 const APP_URL = location.origin + location.pathname
@@ -621,6 +622,7 @@ function MoreTab({ member, students, onKiosk }: { member: Member; students: Stud
 
   return (
     <div className="page">
+      <NotifyCard userId={member.user_id} title="결제 알림 (이 폰)" offBody="학부모가 카드로 결제하거나 '입금했어요'를 누르면, 또 카드 결제를 취소하면 이 폰으로 바로 알려 드려요." />
       <ParentInviteSection students={students} />
 
       <section className="card">

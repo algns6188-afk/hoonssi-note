@@ -5,7 +5,7 @@ import { InstallLink, openInBrowser } from './install'
 import { errText } from './supabase'
 
 /** 학부모 화면: 출석 알림 켜기/끄기/테스트 */
-export function NotifyCard({ userId }: { userId: string }): JSX.Element {
+export function NotifyCard({ userId, title, offBody }: { userId: string; title?: string; offBody?: string }): JSX.Element {
   const { t, lang } = useI18n()
   const [state, setState] = useState<PushState>('loading')
   const [busy, setBusy] = useState(false)
@@ -40,8 +40,8 @@ export function NotifyCard({ userId }: { userId: string }): JSX.Element {
       <div className="notify-head">
         <span className="notify-icon">{state === 'on' ? '🔔' : '🔕'}</span>
         <div className="grow">
-          <b>{t.notifyTitle}</b>
-          <div className="small muted">{state === 'on' ? t.notifyOn : t.notifyOffBody}</div>
+          <b>{title ?? t.notifyTitle}</b>
+          <div className="small muted">{state === 'on' ? t.notifyOn : offBody ?? t.notifyOffBody}</div>
         </div>
       </div>
 
