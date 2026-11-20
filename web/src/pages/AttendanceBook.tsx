@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useKeep } from '../keep'
 import { supabase, errText, type Student } from '../supabase'
 import { SESSION_TIMES, type StudentFull } from './StudentForm'
 
@@ -73,7 +74,7 @@ const isAbsType = (k: DayStatus): k is 'absent' | 'sick' | 'trip' => k === 'abse
 
 export function DailyBook({ students: all, initialDate }: { students: Student[]; initialDate?: string }): JSX.Element {
   const students = (all as StudentFull[]).filter((s) => s.active)
-  const [date, setDate] = useState(initialDate ?? kstToday())
+  const [date, setDate] = useKeep(initialDate ? null : 'att-date', initialDate ?? kstToday())
   const [att, setAtt] = useState<Att[]>([])
   const [abs, setAbs] = useState<Abs[]>([])
   const [contacts, setContacts] = useState<Contact[]>([])
@@ -262,7 +263,7 @@ type Cell = 'in' | AbsKind | 'off' | 'future' | 'miss'
 
 export function MonthlyBook({ students: all, onOpenDay }: { students: Student[]; onOpenDay(d: string): void }): JSX.Element {
   const students = (all as StudentFull[]).filter((s) => s.active)
-  const [month, setMonth] = useState(kstToday().slice(0, 7))
+  const [month, setMonth] = useKeep('att-month', kstToday().slice(0, 7))
   const [att, setAtt] = useState<Att[]>([])
   const [abs, setAbs] = useState<Abs[]>([])
   const [loaded, setLoaded] = useState(false)

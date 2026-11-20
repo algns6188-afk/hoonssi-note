@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useKeep } from '../keep'
 import { supabase, errText, type Member, type Student } from '../supabase'
 import DepositMatch from './DepositMatch'
 import BillingTable, { daysSincePaid, needsReceipt, ReceiptSheet, type Inv } from './BillingTable'
@@ -22,10 +23,10 @@ const defaultDue = (period: string): string => (`${period}-10` < plusDays(0) ? p
 
 /** 관리자: 수납 탭 */
 export default function BillingTab({ students, member }: { students: Student[]; member: Member }): JSX.Element {
-  const [period, setPeriod] = useState(thisPeriod())
+  const [period, setPeriod] = useKeep('bill-period', thisPeriod())
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [items, setItems] = useState<FeeItem[]>([])
-  const [filter, setFilter] = useState<Filter>('open')
+  const [filter, setFilter] = useKeep<Filter>('bill-filter', 'open')
   const [sheet, setSheet] = useState<'bill' | 'monthly' | 'settings' | null>(null)
   const [detail, setDetail] = useState<Invoice | null>(null)
   const [receiptFor, setReceiptFor] = useState<Inv | null>(null)

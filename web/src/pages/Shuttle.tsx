@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useKeep } from '../keep'
 import { supabase, errText, type Member, type Student } from '../supabase'
 import { AreaEditor, DriverMode, PickMap, placeSearch, RequestSheet, RouteView, usePlace, useTrips } from './ShuttleLive'
 import { addressQuery, geocode, type Area } from '../mapAdapter'
@@ -122,12 +123,12 @@ const KIND: Record<Run['kind'], string> = { to: '등원', from: '하원', mixed:
 
 export default function ShuttleTab({ students, member }: { students: Student[]; member: Member }): JSX.Element {
   const [data, setData] = useState<ShuttleData | null>(null)
-  const [day, setDay] = useState(DAYS.includes(todayDay()) ? todayDay() : '월')
-  const [open, setOpen] = useState<string | null>(null)
+  const [day, setDay] = useKeep('sh-day', DAYS.includes(todayDay()) ? todayDay() : '월')
+  const [open, setOpen] = useKeep<string | null>('sh-open', null)
   const [edit, setEdit] = useState<{ run: Run; rs: RunStop } | null>(null)
   const [sheet, setSheet] = useState<'stops' | 'vehicle' | null>(null)
   const [q, setQ] = useState('')
-  const [driving, setDriving] = useState<Run | null>(null)
+  const [drivingId, setDrivingId] = useKeep<string | null>('sh-driving', null)   // 운행 화면은 앱이 새로 열려도 그대로
   const [changing, setChanging] = useState<RideRequest | 'new' | null>(null)
   const { trips, v9: liveOk } = useTrips()
   const place = usePlace()
@@ -160,7 +161,8 @@ export default function ShuttleTab({ students, member }: { students: Student[]; 
   }, [data, q, students, day])
 
   if (!data) return <p className="center muted">불러오는 중…</p>
-  if (driving) return <DriverMode data={data} run={driving} day={todayDay()} place={place} orgId={member.org_id} onExit={() => setDriving(null)} />
+  const driving = data.runs.find((r) => r.id === drivingId) ?? null
+  if (driving) return <DriverMode data={data} run={driving} day={todayDay()} place={place} orgId={member.org_id} onExit={() => setDrivingId(null)} />
   const isToday = day === todayDay()
   const date = nextDateOf(day)
   const pending = data.requests.filter((q) => q.status === 'pending')
@@ -292,7 +294,7 @@ export default function ShuttleTab({ students, member }: { students: Student[]; 
                       {running ? (
                         <div className="row">
                           <button className="danger-btn grow" onClick={() => tripCall('trip_end')}>■ 운행 종료</button>
-                          <button className="ghost small-btn" onClick={() => setDriving(run)}>📱 이 폰으로 위치 보내기</button>
+                          <button className="ghost small-btn" onClick={() => setDrivingId(run.id)}>📱 이 폰으로 위치 보내기</button>
                         </div>
                       ) : (
                         <div className="dev-start">
@@ -305,7 +307,7 @@ export default function ShuttleTab({ students, member }: { students: Student[]; 
                           ))}
                           <div className="row">
                             {devs.length === 0 && <button className="primary grow" onClick={() => tripCall('trip_start')}>▶ 지금 운행 시작</button>}
-                            <button className="ghost small-btn" onClick={() => setDriving(run)}>📱 이 폰으로 운행 시작</button>
+                            <button className="ghost small-btn" onClick={() => setDrivingId(run.id)}>📱 이 폰으로 운행 시작</button>
                           </div>
                         </div>
                       )}

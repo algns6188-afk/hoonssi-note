@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useKeep } from '../keep'
 import { addressQuery, createMap, drawArea, geocode, onMapFallback, type Area, type LL, type MapAdapter, type MarkerH } from '../mapAdapter'
 import { supabase, errText } from '../supabase'
 import { useI18n } from '../i18n'
@@ -82,7 +83,7 @@ export function RouteView({ data, run, day, trip, place, names, mineOnly, onEdit
   onUndo?: (v: RideView, rsId: string) => void  // 관리자: 하루 변경 되돌리기
 }): JSX.Element {
   const { t } = useI18n()
-  const [tab, setTab] = useState<'route' | 'map'>('route')
+  const [tab, setTab] = useKeep<'route' | 'map'>('sh-view', 'route')
   const date = kstDate()
   const list = stopsOn(data, run, day, date)
   const stopOf = (id: string): Stop | undefined => data.stops.find((s) => s.id === id)

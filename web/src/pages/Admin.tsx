@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useKeep } from '../keep'
 import {
   supabase, errText, hhmm, makeCode, todayStartIso,
   type Attendance, type Invite, type Member, type Student, type TimelineItem
@@ -18,10 +19,10 @@ const APP_URL = location.origin + location.pathname
 
 /** 관리자·선생님 화면 (한국어) */
 export default function AdminApp({ member }: { member: Member }): JSX.Element {
-  const [tab, setTab] = useState<Tab>('today')
+  const [tab, setTab] = useKeep<Tab>('admin-tab', 'today')
   const [kiosk, setKiosk] = useState(false)
-  const [att, setAtt] = useState<'today' | 'daily' | 'monthly'>('today')
-  const [shv, setShv] = useState<'table' | 'areas'>('table')
+  const [att, setAtt] = useKeep<'today' | 'daily' | 'monthly'>('admin-att', 'today')
+  const [shv, setShv] = useKeep<'table' | 'areas'>('admin-shv', 'table')
   const [dayKey, setDayKey] = useState(0) // 월별에서 날짜 눌렀을 때 일별 새로 열기
   const [openDay, setOpenDay] = useState<string | null>(null)
   const [students, setStudents] = useState<Student[]>([])
