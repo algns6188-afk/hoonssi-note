@@ -89,6 +89,7 @@ export function RouteView({ data, run, day, trip, place, names, mineOnly, onEdit
   const stopOf = (id: string): Stop | undefined => data.stops.find((s) => s.id === id)
   const eta = etaOf(list, trip)
   const lastPassed = list.reduce((n, rs, i) => (trip?.passed[rs.id] ? i : n), -1)
+  const arrived = run.kind !== 'from' ? trip?.passed.dojang_arrived : undefined   // 태권도장 도착 (GPS)
   const running = !!trip && !trip.ended_at && !trip.kid_done
   const now = Date.now()
 
@@ -151,14 +152,16 @@ export function RouteView({ data, run, day, trip, place, names, mineOnly, onEdit
                     : e ? <><b>{clock(e)}</b><div className="muted tiny">{e > now ? t.shMinLater.replace('{n}', String(Math.max(1, Math.round((e - now) / 60000)))) : t.shEta}</div></>
                       : <><b>{hm(rs.at_time)}</b><div className="muted tiny">{t.shScheduled}</div></>}
                 </div>
-                {running && i === lastPassed && <div className="rv-bus">🚐 {t.shBusHere}</div>}
+                {running && !arrived && i === lastPassed && <div className="rv-bus">🚐 {t.shBusHere}</div>}
               </li>
             )
           })}
           {run.kind !== 'from' && (
-            <li className="rv-stop dojang">
+            <li className={`rv-stop dojang ${arrived ? 'done' : ''}`}>
               <span className="rv-dot">🥋</span>
               <div className="grow"><b>{t.shDojangEnd}</b>{run.class_start && <div className="muted tiny">{hm(run.class_start)}</div>}</div>
+              {arrived && <div className="rv-time"><b>{clock(Date.parse(arrived))}</b><div className="muted tiny">{t.shArrived}</div></div>}
+              {running && arrived && <div className="rv-bus">🚐 {t.shBusHere}</div>}
             </li>
           )}
         </ol>
@@ -210,7 +213,7 @@ function RouteMap({ data, run, list, trip, place, mineIds, parent }: {
   const running = !!trip && !trip.ended_at && !trip.kid_done
   let at = -1
   if (trip) {
-    pts.forEach((p, i) => { if (trip.passed[p.id]) at = i })
+    pts.forEach((p, i) => { if (trip.passed[p.id] || (p.id === 'dojang-end' && trip.passed.dojang_arrived)) at = i })
     if (at === -1 && pts[0]?.id === 'dojang') at = 0           // 도장에서 출발함
     if (trip.ended_at) at = pts.length - 1
     if (trip.kid_done && !trip.ended_at) at = -1   // 학부모: 우리 아이 끝난 뒤엔 위치 숨김
@@ -375,11 +378,12 @@ export function DriverMode({ data, run, day, place, orgId, onExit }: { data: Shu
     return () => navigator.geolocation.clearWatch(id)
   }, [trip?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const togglePassed = async (rs: RunStop): Promise<void> => {
+  const togglePassed = async (rs: RunStop | 'dojang_arrived'): Promise<void> => {
     if (!trip) return
+    const key = rs === 'dojang_arrived' ? rs : rs.id
     const passed = { ...trip.passed }
-    if (passed[rs.id]) delete passed[rs.id]
-    else passed[rs.id] = new Date().toISOString()
+    if (passed[key]) delete passed[key]
+    else passed[key] = new Date().toISOString()
     setTrip({ ...trip, passed })
     await supabase.from('shuttle_trips').update({ passed }).eq('id', trip.id)
   }
@@ -455,6 +459,13 @@ export function DriverMode({ data, run, day, place, orgId, onExit }: { data: Shu
             </li>
           )
         })}
+        {run.kind !== 'from' && (
+          <li className={trip?.passed.dojang_arrived ? 'done' : ''} onClick={() => togglePassed('dojang_arrived')}>
+            <span className="rv-dot">{trip?.passed.dojang_arrived ? '✓' : '🥋'}</span>
+            <div className="grow"><b>태권도장 도착</b> <span className="muted small">도장 80m 안에 오면 자동 표시</span></div>
+            <span className="small">{trip?.passed.dojang_arrived ? clock(Date.parse(trip.passed.dojang_arrived)) : ''}</span>
+          </li>
+        )}
       </ol>
       {place?.lat == null && <p className="muted small">도장 위치가 지도에 없어요. 📍 정류장 화면에서 도장 위치를 정해 주세요.</p>}
     </div>
