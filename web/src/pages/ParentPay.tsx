@@ -15,6 +15,8 @@ export function ParentPayments({ kids }: { kids: Student[] }): JSX.Element | nul
   const [group, setGroup] = useState<'tuition' | 'other' | null>(null) // 수련비 / 그 외는 계좌가 달라 따로 결제
   const [toast, setToast] = useState<string | null>(null)
   const [showHistory, setShowHistory] = useState(false)
+  const [ep, setEp] = useState<EasyPay | null>(null)          // 이지페이 (v26)
+  const [vbanks, setVbanks] = useState<EpOrder[]>([])         // 입금 대기 중인 전용 계좌
 
   const load = useCallback(async () => {
     const [i, b, p] = await Promise.all([
@@ -25,6 +27,12 @@ export function ParentPayments({ kids }: { kids: Student[] }): JSX.Element | nul
     setInvoices((i.data as Invoice[]) ?? [])
     setBank(((b.data as OrgBank[]) ?? [])[0] ?? null)
     setPayers([...new Set(((p.data as { name: string }[]) ?? []).map((x) => x.name))])
+    const [e, o] = await Promise.all([
+      supabase.rpc('org_easypay'),
+      supabase.from('easypay_orders').select('order_no,amount,invoice_ids,vbank,created_at,status').eq('status', 'waiting').order('created_at', { ascending: false }).limit(10)
+    ])
+    setEp(e.error ? null : (e.data as EasyPay))
+    setVbanks(o.error ? [] : (o.data as EpOrder[]) ?? [])
   }, [])
 
   useEffect(() => {
@@ -35,6 +43,18 @@ export function ParentPayments({ kids }: { kids: Student[] }): JSX.Element | nul
       .subscribe()
     return () => void supabase.removeChannel(ch)
   }, [load])
+
+  // 이지페이 결제창에서 돌아왔을 때 (…?ep=ok|vbank|fail&o=주문번호&m=메시지)
+  useEffect(() => {
+    const u = new URL(location.href)
+    const r = u.searchParams.get('ep')
+    if (!r) return
+    const m = u.searchParams.get('m')
+    for (const k of ['ep', 'o', 'm']) u.searchParams.delete(k)
+    history.replaceState(null, '', u.pathname + u.search)
+    setToast(r === 'ok' ? t.payDone : r === 'vbank' ? `🏧 ${t.payVbankWait}` : `${t.payFailed}${m ? ` (${m})` : ''}`)
+    window.setTimeout(() => setToast(null), 5000)
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // 카드·토스페이 결제창에서 돌아왔을 때 (…?pay=success&inv=…&paymentKey=…&orderId=…&amount=…)
   useEffect(() => {
@@ -168,9 +188,15 @@ export function ParentPayments({ kids }: { kids: Student[] }): JSX.Element | nul
         </>
       )}
 
+      {vbanks.length > 0 && (
+        <div className="vbank-list">
+          <b>🏧 {t.payVbankWait}</b>
+          {vbanks.map((o) => <VbankCard key={o.order_no} o={o} names={[...new Set(invoices.filter((i) => o.invoice_ids.includes(i.id)).map((i) => `${kidName(i.student_id)} ${itemLabel(i.item_name, i.period, lang)}`))].join(', ')} onCopied={() => flash(t.payCopied)} />)}
+        </div>
+      )}
       {toast && <div className="toast">{toast}</div>}
       {paying && bank && (
-        <PaySheet invoices={paying} bank={bank} kidName={kidName}
+        <PaySheet invoices={paying} bank={bank} ep={ep} kidName={kidName}
           onClose={() => setPaying(null)} onReport={() => { setReporting(paying); setPaying(null) }} onCopied={() => flash(t.payCopied)}
           onLocalDone={() => { setPaying(null); setUnpicked(new Set()); flash(t.payLocalSent); load() }} />
       )}
@@ -254,7 +280,24 @@ function ReportSheet({ invoices, payers, kidNames = [], onClose, onDone }: {
 
 /* ---------------- 결제 수단 고르기: 카드 · 토스페이 · 무통장 · 지역화폐 ---------------- */
 
-type PayKind = 'card' | 'tosspay' | 'bank' | 'local'
+type PayKind = 'card' | 'tosspay' | 'bank' | 'local' | 'ep_card' | 'ep_vbank'
+interface EasyPay { on: boolean; vbank: boolean; live: boolean }
+interface EpOrder { order_no: string; amount: number; invoice_ids: string[]; vbank: Record<string, string> | null; created_at: string; status: string }
+
+/** 가상계좌 한 장: 은행·계좌번호·금액·기한 + 복사 */
+function VbankCard({ o, names, onCopied }: { o: EpOrder; names: string; onCopied(): void }): JSX.Element {
+  const { t, lang } = useI18n()
+  const v = o.vbank ?? {}
+  const due = v.due ? v.due.replace(/^(\d{4})(\d{2})(\d{2})(\d{2})?(\d{2})?.*$/, (_m, y, mo, d, h, mi) => `${mo}/${d}${h ? ` ${h}:${mi ?? '00'}` : ''}`) : ''
+  return (
+    <div className="account-card vbank-card">
+      <div className="small muted">{names}</div>
+      <div className="acc-num">{v.bank ?? v.bankCode ?? ''} <b>{v.account ?? '—'}</b></div>
+      <div className="small">{t.payVbankSend}: <b>{won(o.amount, lang)}</b>{due && <> · {t.payVbankDue} {due}</>}</div>
+      {v.account && <button className="primary acc-copy" onClick={() => copyText(v.account.replace(/[^0-9]/g, '')).then(onCopied)}>📋 {t.payCopy}</button>}
+    </div>
+  )
+}
 declare global { interface Window { TossPayments?: unknown } }
 
 function loadTossSdk(): Promise<void> {
@@ -268,14 +311,15 @@ function loadTossSdk(): Promise<void> {
   })
 }
 
-function PaySheet({ invoices, bank, kidName, onClose, onReport, onCopied, onLocalDone }: {
-  invoices: Invoice[]; bank: OrgBank; kidName(id: string): string
+function PaySheet({ invoices, bank, ep, kidName, onClose, onReport, onCopied, onLocalDone }: {
+  invoices: Invoice[]; bank: OrgBank; ep: EasyPay | null; kidName(id: string): string
   onClose(): void; onReport(): void; onCopied(): void; onLocalDone(): void
 }): JSX.Element {
   const { t, lang } = useI18n()
-  const online = !!bank.toss_client_key
+  const easy = !!ep?.on                       // 이지페이가 켜져 있으면 카드 결제는 이지페이로
+  const online = !easy && !!bank.toss_client_key
   const local = bank.local_pay ?? ''
-  const [kind, setKind] = useState<PayKind>(online ? 'card' : 'bank')
+  const [kind, setKind] = useState<PayKind>(easy ? 'ep_card' : online ? 'card' : 'bank')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const total = invoices.reduce((s, i) => s + i.amount, 0)
@@ -304,7 +348,25 @@ function PaySheet({ invoices, bank, kidName, onClose, onReport, onCopied, onLoca
     onLocalDone()
   }
 
+  /** 이지페이: 서버에 결제 등록 → 이지페이 결제창으로 이동 */
+  const goEasy = async (): Promise<void> => {
+    setBusy(true)
+    setErr(null)
+    const { data, error } = await supabase.functions.invoke('easypay', {
+      body: { invoiceIds: invoices.map((i) => i.id), method: kind === 'ep_vbank' ? 'vbank' : 'card', back: location.origin + location.pathname, mobile: isMobile() }
+    })
+    if (error || !(data as { url?: string })?.url) {
+      const ctx = (error as { context?: Response } | null)?.context
+      const j = ctx ? await ctx.json().catch(() => null) : null
+      setBusy(false)
+      setErr(`${t.payFailed} (${j?.error ?? (error ? errText(error) : 'no_url')})`)
+      return
+    }
+    location.href = (data as { url: string }).url
+  }
+
   const go = async (): Promise<void> => {
+    if (kind === 'ep_card' || kind === 'ep_vbank') return goEasy()
     setBusy(true)
     setErr(null)
     try {
@@ -334,6 +396,8 @@ function PaySheet({ invoices, bank, kidName, onClose, onReport, onCopied, onLoca
   }
 
   const opts: [PayKind, string, string][] = [
+    ...(easy ? [['ep_card', '💳', t.payCard]] as [PayKind, string, string][] : []),
+    ...(easy && ep?.vbank ? [['ep_vbank', '🏧', t.payVbank]] as [PayKind, string, string][] : []),
     ...(online ? [['card', '💳', t.payCard], ['tosspay', '🔵', t.payTossPay]] as [PayKind, string, string][] : []),
     ['bank', '🏦', t.payBank],
     ...(local ? [['local', '🏪', t.payLocal.replace('{name}', local)]] as [PayKind, string, string][] : [])
@@ -388,7 +452,11 @@ function PaySheet({ invoices, bank, kidName, onClose, onReport, onCopied, onLoca
               <button className="primary big" disabled={busy} onClick={sendLocal}>{busy ? t.loading : t.payLocalBtn.replace('{name}', local)}</button>
             </>
           ) : (
-            <button className="primary big" disabled={busy} onClick={go}>{busy ? t.loading : `${won(total, lang)} ${t.payGo} →`}</button>
+            <>
+              {kind === 'ep_vbank' && <p className="small">{t.payVbankHint}</p>}
+              {easy && !ep?.live && <p className="notice small">🧪 {t.payTestMode}</p>}
+              <button className="primary big" disabled={busy} onClick={go}>{busy ? t.loading : `${won(total, lang)} ${t.payGo} →`}</button>
+            </>
           )}
           {err && <div className="error">{err}</div>}
         </div>

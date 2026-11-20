@@ -803,3 +803,6 @@ a.btn.call { background: var(--in-soft); padding: 8px 10px; }
 .dev-start > button { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left; padding: 10px 12px; }
 .dev-start > button .tiny { opacity: .8; font-weight: 400; }
 .dev-start .row { gap: 8px; }
+/* 이지페이 가상계좌 */
+.vbank-list { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.vbank-card .acc-num { font-size: 17px; }

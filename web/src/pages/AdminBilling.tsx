@@ -4,7 +4,8 @@ import { supabase, errText, type Member, type Student } from '../supabase'
 import DepositMatch from './DepositMatch'
 import BillingTable, { daysSincePaid, needsReceipt, ReceiptSheet, type Inv } from './BillingTable'
 import type { StudentFull } from './StudentForm'
-import { itemLabel, periodLabel, shiftPeriod, thisPeriod, won, type FeeItem, type Invoice } from '../billing'
+import { copyText, itemLabel, periodLabel, shiftPeriod, thisPeriod, won, type FeeItem, type Invoice } from '../billing'
+const NOTI_URL = 'https://gqgeduyjicntceotatku.supabase.co/functions/v1/easypay?a=noti'
 
 type StudentB = Student & { monthly_fee: number | null; auto_bill: boolean }
 type Filter = 'open' | 'reported' | 'paid' | 'all'
@@ -399,6 +400,7 @@ function SettingsSheet({ items, member, onClose, reload }: { items: FeeItem[]; m
   const [toss, setToss] = useState<string | null>(null) // null = v10 전
   const [two, setTwo] = useState(true) // v9 실행돼서 2번 계좌 칸이 있는지
   const [local, setLocal] = useState<string | null>(null) // null = v11 전
+  const [ep, setEp] = useState<{ mid: string; live: boolean; vbank: boolean } | null>(null) // null = v26 전
   const [rows, setRows] = useState(items.map((i) => ({ ...i, amountText: String(i.default_amount || '') })))
   const [newName, setNewName] = useState('')
   const [msg, setMsg] = useState<string | null>(null)
@@ -417,6 +419,13 @@ function SettingsSheet({ items, member, onClose, reload }: { items: FeeItem[]; m
         bank2_name: b.bank2_name ?? '', bank2_account: b.bank2_account ?? '', account2_holder: b.account2_holder ?? '' })
     })
   }, [])
+  useEffect(() => {
+    supabase.from('orgs').select('easypay_mid, easypay_live, easypay_vbank').eq('id', member.org_id).single().then(({ data, error }) => {
+      if (error || !data) return setEp(null)
+      const d = data as { easypay_mid: string | null; easypay_live: boolean; easypay_vbank: boolean }
+      setEp({ mid: d.easypay_mid ?? '', live: d.easypay_live, vbank: d.easypay_vbank })
+    })
+  }, [member.org_id])
   useEffect(() => setRows(items.map((i) => ({ ...i, amountText: String(i.default_amount || '') }))), [items])
 
   const saveBank = async (): Promise<void> => {
@@ -482,6 +491,34 @@ function SettingsSheet({ items, member, onClose, reload }: { items: FeeItem[]; m
               setMsg(error ? '저장 실패: ' + errText(error) : toss ? '✅ 카드·토스페이 결제를 켰어요. 학부모 화면에 [결제하기]가 보여요.' : '카드 결제를 껐어요.')
             }}>카드 결제 저장</button>}
             <p className="muted small">비워 두면 학부모 화면은 지금처럼 계좌이체 + "입금했어요"만 보여요.</p>
+          </>
+        )}
+
+        <h3>💳 이지페이 온라인 결제 <span className="muted small">KICC · 카드 + 전용 입금계좌</span></h3>
+        {ep === null ? <p className="notice">이지페이는 Supabase에서 <b>schema-v26-easypay.sql</b> 을 실행하고 <b>easypay</b> 서버 함수를 배포한 뒤 쓸 수 있어요.</p> : (
+          <>
+            <label>상점ID (MID)
+              <input value={ep.mid} disabled={!admin} onChange={(e) => setEp({ ...ep, mid: e.target.value.trim().toUpperCase() })} placeholder="예: T0022738 (테스트)" />
+              <span className="hint">MID만 넣어요. 이지페이 Key(비밀키)는 여기·채팅에 넣지 마세요. 비우면 이지페이를 꺼요.</span>
+            </label>
+            <label className="check">
+              <input type="checkbox" checked={ep.vbank} disabled={!admin} onChange={(e) => setEp({ ...ep, vbank: e.target.checked })} />
+              <span>전용 입금계좌(가상계좌)도 보이기 <span className="muted small">학부모마다 계좌번호가 따로 나와서 입금자명 확인이 필요 없어요</span></span>
+            </label>
+            <label className="check">
+              <input type="checkbox" checked={ep.live} disabled={!admin} onChange={(e) => {
+                if (e.target.checked && !window.confirm('실제 결제로 바꿀까요? KICC와 계약해서 받은 실제 MID일 때만 켜세요. 학부모 카드에서 실제로 돈이 빠져나가요.')) return
+                setEp({ ...ep, live: e.target.checked })
+              }} />
+              <span>실제 결제 <span className="muted small">(끄면 테스트 서버 — 돈이 안 나가요)</span></span>
+            </label>
+            {ep.mid.startsWith('T') && ep.live && <div className="error">T로 시작하는 MID는 테스트용이에요. "실제 결제"를 꺼 주세요.</div>}
+            {admin && <button className="primary" onClick={async () => {
+              const { error } = await supabase.from('orgs').update({ easypay_mid: ep.mid || null, easypay_live: ep.live, easypay_vbank: ep.vbank }).eq('id', member.org_id)
+              setMsg(error ? '저장 실패: ' + errText(error) : ep.mid ? `✅ 이지페이를 켰어요 (${ep.live ? '실제 결제' : '테스트'}). 학부모 결제 화면의 카드 결제가 이지페이로 바뀌어요.` : '이지페이를 껐어요.')
+            }}>이지페이 저장</button>}
+            <p className="muted small">가상계좌 입금을 자동으로 받으려면 이지페이 가맹점 관리자의 <b>노티 URL</b>에 아래 주소를 등록하세요.</p>
+            <div className="row"><code className="grow small">{NOTI_URL}</code><button className="small-btn" onClick={() => copyText(NOTI_URL).then(() => setMsg('📋 노티 URL을 복사했어요.'))}>복사</button></div>
           </>
         )}
 
