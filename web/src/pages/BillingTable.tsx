@@ -297,6 +297,7 @@ export default function BillingTable({ invoices, period, students, items, member
                       <option value="">-</option>
                       {(activeMethods.some((m) => m.name === d.via) || !d.via ? activeMethods : [...activeMethods, { name: d.via } as PayMethod]).map((m) => <option key={m.name} value={m.name}>{m.name}</option>)}
                     </select>
+                    <CardCancelButton invoice={i} />
                   </td>
                   <td><input type="date" disabled={locked || d.status !== 'paid'} value={d.date} onChange={(e) => edit(i, { date: e.target.value })} /></td>
                   <td><input className="bt-memo" disabled={locked} value={d.memo} onChange={(e) => edit(i, { memo: e.target.value })} /></td>
@@ -370,6 +371,30 @@ function MethodSheet({ methods, v9, member, onClose }: { methods: PayMethod[]; v
 export const needsReceipt = (i: Inv): boolean =>
   i.status === 'paid' && !i.receipt_issued && (i.paid_method === 'transfer' || i.paid_method === 'cash') && Number(i.paid_amount ?? i.amount) >= 100000
 export const daysSincePaid = (i: Inv): number => (i.paid_at ? Math.floor((Date.now() - Date.parse(i.paid_at)) / 86400_000) : 0)
+
+/** 이지페이 카드 결제 취소(환불) 버튼 — 이지페이로 낸 청구에만 보임 */
+export function CardCancelButton({ invoice: i, onDone }: { invoice: { id: string; status: string; paid_via?: string | null; amount: number; paid_amount?: number | null; payment_key?: string | null }; onDone?(): void }): JSX.Element | null {
+  const [busy, setBusy] = useState(false)
+  if (i.status !== 'paid' || !i.payment_key || !(i.paid_via ?? '').includes('이지페이')) return null
+  const go = async (): Promise<void> => {
+    const amt = Number(i.paid_amount ?? i.amount)
+    if (!window.confirm(`카드 결제 ${amt.toLocaleString('ko-KR')}원을 취소할까요?\n학부모 카드로 환불되고, 이 청구는 다시 "미납"이 돼요.`)) return
+    setBusy(true)
+    const { data, error } = await supabase.functions.invoke('easypay', { body: { action: 'pay_cancel', invoiceId: i.id } })
+    let err = (data as { error?: string } | null)?.error
+    if (error) {
+      const ctx = (error as { context?: Response }).context
+      const j = ctx ? await ctx.json().catch(() => null) : null
+      err = j?.error ?? errText(error)
+    }
+    setBusy(false)
+    if (err) return alert(err === 'no_secret' ? '결제 취소에는 이지페이 Key가 필요해요. Supabase 비밀값 EASYPAY_SECRET_KEY 를 확인해 주세요.'
+      : err === 'not_easypay' ? '이지페이로 결제한 기록을 찾지 못했어요. 이지페이 가맹점 관리자에서 취소해 주세요.' : '취소 실패: ' + err)
+    alert(`✅ 카드 결제를 취소했어요${(data as { partial?: boolean }).partial ? ' (같이 낸 다른 청구는 그대로, 이 청구 금액만 부분취소)' : ''}.`)
+    onDone?.()
+  }
+  return <button className="small-btn ghost danger" disabled={busy} onClick={go}>{busy ? '취소 중…' : '💳 카드 결제 취소'}</button>
+}
 
 export function ReceiptSheet({ invoice: i, studentName, defaultNo, onClose }: { invoice: Inv; studentName: string; defaultNo: string; onClose(): void }): JSX.Element {
   const [no, setNo] = useState(i.receipt_no || defaultNo)

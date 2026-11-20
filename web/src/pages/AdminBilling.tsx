@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useKeep } from '../keep'
 import { supabase, errText, type Member, type Student } from '../supabase'
 import DepositMatch from './DepositMatch'
-import BillingTable, { daysSincePaid, needsReceipt, ReceiptSheet, type Inv } from './BillingTable'
+import BillingTable, { CardCancelButton, daysSincePaid, needsReceipt, ReceiptSheet, type Inv } from './BillingTable'
 import type { StudentFull } from './StudentForm'
 import { copyText, itemLabel, periodLabel, shiftPeriod, thisPeriod, won, type FeeItem, type Invoice } from '../billing'
 const NOTI_URL = 'https://gqgeduyjicntceotatku.supabase.co/functions/v1/easypay?a=noti'
@@ -382,6 +382,7 @@ function InvoiceSheet({ invoice: i, name, member, onClose }: { invoice: Invoice;
           </>
         )}
         <label>메모<input value={memo} onChange={(e) => setMemo(e.target.value)} onBlur={() => memo !== i.memo && supabase.from('invoices').update({ memo }).eq('id', i.id)} /></label>
+        {i.status === 'paid' && (i as { paid_via?: string }).paid_via?.includes('이지페이') && <CardCancelButton invoice={i as Invoice & { paid_via?: string; payment_key?: string | null }} onDone={onClose} />}
         {i.status === 'paid' && <button disabled={busy} onClick={() => upd({ status: 'unpaid', paid_at: null, paid_amount: null, paid_method: null })}>미납으로 되돌리기</button>}
         {i.status !== 'canceled' && i.status !== 'paid' && (
           <button className="ghost danger" disabled={busy} onClick={() => confirm_(`${name} ${itemLabel(i.item_name, i.period)} 청구를 취소할까요?`) && upd({ status: 'canceled' })}>청구 취소</button>

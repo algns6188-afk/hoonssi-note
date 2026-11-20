@@ -8,6 +8,7 @@
 //  ③ ?a=noti    : 이지페이 서버가 보내는 알림(가상계좌 입금 등). 가맹점 관리자에서 노티 URL 로 등록
 //  ④ POST {action:'receipt', invoiceId, identity, type}  (직원만) → 현금영수증 단독 발행
 //  ⑤ POST {action:'receipt_cancel', invoiceId}            (직원만) → 현금영수증 발행 취소
+//  ⑥ POST {action:'pay_cancel', invoiceId}                (직원만) → 카드 결제 취소(환불). 여러 건 함께 낸 결제면 그 청구만 부분취소
 //     ※ 취소는 메시지 인증값이 필요해서 Supabase 비밀값 EASYPAY_SECRET_KEY (이지페이 Key) 가 있어야 함
 //
 //  상점ID(MID)는 강철노트 수납 설정에서 저장(orgs.easypay_mid). 비밀키는 필요 없음.
@@ -170,6 +171,46 @@ async function cancelReceipt(userId: string, b: { invoiceId?: unknown }): Promis
   return json({ ok: true })
 }
 
+/** ⑥ 카드 결제 취소: 같은 결제의 청구가 하나 남았으면 전체취소(40), 아니면 그 청구 금액만 부분취소(32) */
+async function cancelPay(userId: string, b: { invoiceId?: unknown; reason?: unknown }): Promise<Response> {
+  if (typeof b.invoiceId !== 'string' || !/^[0-9a-f-]{36}$/.test(b.invoiceId)) return json({ error: 'bad_request' }, 400)
+  const { data: inv } = await db.from('invoices').select('*').eq('id', b.invoiceId).maybeSingle()
+  if (!inv) return json({ error: 'no_invoice' }, 404)
+  const { data: mem } = await db.from('members').select('role,org_id').eq('user_id', userId).maybeSingle()
+  if (!mem || mem.org_id !== inv.org_id || mem.role === 'parent' || mem.role === 'kiosk') return json({ error: 'not_allowed' }, 403)
+  if (inv.status !== 'paid' || !inv.payment_key) return json({ error: 'not_easypay' }, 400)
+  const { data: order } = await db.from('easypay_orders').select('*').eq('pg_cno', inv.payment_key).eq('method', 'card').maybeSingle()
+  if (!order) return json({ error: 'not_easypay' }, 400)
+  const { data: org } = await db.from('orgs').select('easypay_mid, easypay_live').eq('id', order.org_id).single()
+
+  // 이 결제로 아직 납부 상태인 청구들 = 남은 금액
+  const { data: still } = await db.from('invoices').select('id,amount,paid_amount').in('id', order.invoice_ids).eq('status', 'paid').eq('payment_key', inv.payment_key)
+  const remain = (still ?? []).reduce((s: number, x: { amount: number; paid_amount: number | null }) => s + Number(x.paid_amount ?? x.amount), 0)
+  const amt = Number(inv.paid_amount ?? inv.amount)
+  const full = amt >= remain && (still ?? []).length === order.invoice_ids.length   // 이미 부분취소한 결제면 남은 것도 부분취소로
+  const last = amt >= remain
+  const tx = 'kcx' + Date.now().toString(36) + rid(8)
+  const auth = await msgAuth(order.pg_cno, tx)
+  if (!auth) return json({ error: 'no_secret' }, 500)
+  const r = await fetch(`${api(!!org?.easypay_live)}/api/trades/revise`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json; charset=utf-8' }, signal: AbortSignal.timeout(30000),
+    body: JSON.stringify({
+      mallId: org?.easypay_mid, shopTransactionId: tx, pgCno: order.pg_cno, reviseTypeCode: full ? '40' : '32',
+      ...(full ? {} : { amount: amt, remainAmount: remain }),
+      cancelReqDate: kstDate(), msgAuthValue: auth, reviseMessage: String(b.reason ?? '도장 결제 취소').slice(0, 50)
+    })
+  })
+  const p = await r.json().catch(() => ({}))
+  if (p.resCd !== '0000') return json({ error: p.resMsg ?? 'cancel_failed', code: p.resCd }, 400)
+  await db.from('invoices').update({
+    status: 'unpaid', paid_amount: null, paid_method: null, paid_at: null, paid_via: '', payment_key: null,
+    memo: [inv.memo, `카드 결제 취소 ${won(amt)}${full ? '' : ' (부분취소)'}`].filter(Boolean).join(' · ')
+  }).eq('id', inv.id)
+  if (last) await db.from('easypay_orders').update({ status: 'canceled', message: '결제 취소' }).eq('id', order.id)
+  return json({ ok: true, partial: !full, amount: amt })
+}
+const won = (n: number): string => n.toLocaleString('ko-KR') + '원'
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS })
   const a = new URL(req.url).searchParams.get('a')
@@ -238,6 +279,7 @@ Deno.serve(async (req) => {
     const body = await req.json()
     if (body?.action === 'receipt') return await issueReceipt(u.user.id, body)
     if (body?.action === 'receipt_cancel') return await cancelReceipt(u.user.id, body)
+    if (body?.action === 'pay_cancel') return await cancelPay(u.user.id, body)
     const { invoiceIds, method, back, mobile } = body
     const ids: string[] = Array.isArray(invoiceIds) ? invoiceIds.filter((x: unknown) => typeof x === 'string' && /^[0-9a-f-]{36}$/.test(x as string)) : []
     if (!ids.length || ids.length > 50 || (method !== 'card' && method !== 'vbank')) return json({ error: 'bad_request' }, 400)
