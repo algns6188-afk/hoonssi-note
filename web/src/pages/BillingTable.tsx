@@ -373,7 +373,9 @@ export const daysSincePaid = (i: Inv): number => (i.paid_at ? Math.floor((Date.n
 
 export function ReceiptSheet({ invoice: i, studentName, defaultNo, onClose }: { invoice: Inv; studentName: string; defaultNo: string; onClose(): void }): JSX.Element {
   const [no, setNo] = useState(i.receipt_no || defaultNo)
-  const [type, setType] = useState<'소득공제' | '지출증빙'>(i.receipt_type === '지출증빙' ? '지출증빙' : '소득공제')
+  const [type, setType] = useState<'소득공제' | '지출증빙' | '자진발급'>(i.receipt_type === '지출증빙' ? '지출증빙' : '소득공제')
+  const [ep, setEp] = useState<{ on: boolean; live: boolean } | null>(null)   // 이지페이로 발급 (v26)
+  useEffect(() => { supabase.rpc('org_easypay').then(({ data, error }) => setEp(error ? null : (data as { on: boolean; live: boolean }))) }, [])
   const [manual, setManual] = useState(false)
   const [approval, setApproval] = useState('')
   const [how, setHow] = useState('단말기')
@@ -388,7 +390,10 @@ export function ReceiptSheet({ invoice: i, studentName, defaultNo, onClose }: { 
 
   const call = async (action: 'issue' | 'cancel'): Promise<void> => {
     setBusy(true); setMsg(null)
-    const { data, error } = await supabase.functions.invoke('cash-receipt', { body: { invoiceId: i.id, action, identity: no, type } })
+    const viaEasy = !!ep?.on && (action === 'issue' || (i.receipt_key ?? '').startsWith('easypay:'))
+    const { data, error } = viaEasy
+      ? await supabase.functions.invoke('easypay', { body: action === 'cancel' ? { action: 'receipt_cancel', invoiceId: i.id } : { action: 'receipt', invoiceId: i.id, identity: type === '자진발급' ? '' : no, type } })
+      : await supabase.functions.invoke('cash-receipt', { body: { invoiceId: i.id, action, identity: no, type } })
     let err = (data as { error?: string } | null)?.error
     if (error) {
       const ctx = (error as { context?: Response }).context
@@ -397,13 +402,14 @@ export function ReceiptSheet({ invoice: i, studentName, defaultNo, onClose }: { 
     }
     setBusy(false)
     if (err) {
-      setMsg(err === 'no_secret' ? '토스페이먼츠 시크릿 키가 아직 없어요. 아래 "직접 발급했어요"로 기록하거나, 설정을 마쳐 주세요.'
+      setMsg(err === 'no_secret' ? (viaEasy ? '발급 취소에는 이지페이 Key가 필요해요. Supabase 비밀값 EASYPAY_SECRET_KEY 에 넣어 주세요. (또는 이지페이 관리자에서 취소 후 "발급 표시 지우기")' : '토스페이먼츠 시크릿 키가 아직 없어요. 아래 "직접 발급했어요"로 기록하거나, 설정을 마쳐 주세요.')
         : err === 'bad_identity' ? '번호를 확인해 주세요. (휴대폰 번호, 사업자번호, 현금영수증카드 번호)'
           : err === 'not_auto' ? '단말기·홈택스로 발급한 건은 거기서 취소한 뒤 "발급 표시 지우기"를 눌러 주세요.'
             : /Failed to send|FunctionsFetchError|404/i.test(err) ? '자동 발급 기능(cash-receipt 함수)이 아직 설치 전이에요. 아래 "직접 발급했어요"로 기록할 수 있어요.'
               : '발급 실패: ' + err)
       return
     }
+    if (viaEasy && (data as { test?: boolean }).test) { setMsg(`✅ 테스트 발급 성공 (승인번호 ${(data as { approval?: string }).approval ?? '-'}) — 테스트 모드라 국세청에 실제로 발급되지는 않았어요.`); window.setTimeout(onClose, 2500); return }
     setMsg(action === 'issue' ? `✅ 국세청에 발급했어요.${(data as { approval?: string }).approval ? ` 승인번호 ${(data as { approval?: string }).approval}` : ''}` : '✅ 발급을 취소했어요.')
     window.setTimeout(onClose, 1200)
   }
@@ -449,8 +455,11 @@ export function ReceiptSheet({ invoice: i, studentName, defaultNo, onClose }: { 
               <div className="seg">
                 <button className={type === '소득공제' ? 'on' : ''} onClick={() => setType('소득공제')}>소득공제 (개인)</button>
                 <button className={type === '지출증빙' ? 'on' : ''} onClick={() => setType('지출증빙')}>지출증빙 (사업자)</button>
+                {ep?.on && <button className={type === '자진발급' ? 'on' : ''} onClick={() => setType('자진발급')}>번호 모름 (자진발급)</button>}
               </div>
-              <button className="primary big" disabled={busy} onClick={() => call('issue')}>{busy ? '발급 중…' : '🧾 국세청에 바로 발급'}</button>
+              {type === '자진발급' && <p className="muted small">학부모 번호를 모를 때 국세청 지정번호(010-000-1234)로 발급해요. 학부모가 나중에 홈택스에서 본인 것으로 바꿀 수 있어요.</p>}
+              {ep?.on && !ep.live && <p className="notice small">🧪 이지페이 테스트 모드예요. 발급 테스트만 되고 국세청에 실제로 발급되지 않아요.</p>}
+              <button className="primary big" disabled={busy} onClick={() => call('issue')}>{busy ? '발급 중…' : ep?.on ? '🧾 이지페이로 바로 발급' : '🧾 국세청에 바로 발급'}</button>
               <button className="ghost small-btn" onClick={() => setManual(!manual)}>{manual ? '▲' : '▼'} 단말기·홈택스로 직접 발급했어요</button>
               {manual && (
                 <div className="form">

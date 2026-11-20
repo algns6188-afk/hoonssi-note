@@ -6,6 +6,9 @@
 //  ② ?a=return  : 결제창에서 카드 입력/은행 선택이 끝나면 이지페이가 학부모 폰을 이 주소로 보냄
 //     → 이지페이 승인 요청 → 카드: 청구서 "납부" / 가상계좌: 계좌 발급("입금 대기") → 강철노트 화면으로 돌려보냄
 //  ③ ?a=noti    : 이지페이 서버가 보내는 알림(가상계좌 입금 등). 가맹점 관리자에서 노티 URL 로 등록
+//  ④ POST {action:'receipt', invoiceId, identity, type}  (직원만) → 현금영수증 단독 발행
+//  ⑤ POST {action:'receipt_cancel', invoiceId}            (직원만) → 현금영수증 발행 취소
+//     ※ 취소는 메시지 인증값이 필요해서 Supabase 비밀값 EASYPAY_SECRET_KEY (이지페이 Key) 가 있어야 함
 //
 //  상점ID(MID)는 강철노트 수납 설정에서 저장(orgs.easypay_mid). 비밀키는 필요 없음.
 import { createClient } from 'npm:@supabase/supabase-js@2'
@@ -90,6 +93,83 @@ async function markPaid(order: { invoice_ids: string[]; method: string }, pgCno:
   }
 }
 
+/** ④ 현금영수증 단독 발행 (계좌이체·현금으로 받은 청구) */
+async function issueReceipt(userId: string, b: { invoiceId?: unknown; identity?: unknown; type?: unknown }): Promise<Response> {
+  if (typeof b.invoiceId !== 'string' || !/^[0-9a-f-]{36}$/.test(b.invoiceId)) return json({ error: 'bad_request' }, 400)
+  const { data: inv } = await db.from('invoices').select('*').eq('id', b.invoiceId).maybeSingle()
+  if (!inv) return json({ error: 'no_invoice' }, 404)
+  const { data: mem } = await db.from('members').select('role,org_id').eq('user_id', userId).maybeSingle()
+  if (!mem || mem.org_id !== inv.org_id || mem.role === 'parent' || mem.role === 'kiosk') return json({ error: 'not_allowed' }, 403)
+  if (inv.status !== 'paid') return json({ error: 'not_paid' }, 409)
+  if (inv.receipt_issued) return json({ error: 'already_issued' }, 409)
+  const { data: org } = await db.from('orgs').select('easypay_mid, easypay_live').eq('id', inv.org_id).single()
+  if (!org?.easypay_mid) return json({ error: 'easypay_off' }, 400)
+
+  // 발급 번호: 휴대폰(03) · 사업자번호(04) · 현금영수증카드(05) · 번호 없음 = 국세청 자진발급(010-000-1234)
+  const id = String(b.identity ?? '').replace(/\D/g, '')
+  const self = b.type === '자진발급' || !id || id === '0100001234'
+  let authType = '03'
+  if (!self) {
+    if (/^01\d{8,9}$/.test(id)) authType = '03'
+    else if (/^\d{10}$/.test(id)) authType = '04'
+    else if (/^\d{13,19}$/.test(id)) authType = '05'
+    else return json({ error: 'bad_identity' }, 400)
+  }
+  const issueType = self ? '03' : b.type === '지출증빙' ? '02' : '01'
+  const amount = Number(inv.paid_amount ?? inv.amount)
+  const { data: st } = await db.from('students').select('name').eq('id', inv.student_id).maybeSingle()
+  const tx = 'kcr' + Date.now().toString(36) + rid(8)
+  const r = await fetch(`${api(!!org.easypay_live)}/directapi/trades/directCashReceiptApproval`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json; charset=utf-8' }, signal: AbortSignal.timeout(30000),
+    body: JSON.stringify({ directCashReceiptInfo: {   // 문서 표기 "directCashReceiptnfo" 는 오타 — 실제 이름은 Info
+      mallId: org.easypay_mid, shopReqDate: kstDate(), shopTransactionId: tx, shopOrderNo: 'KR' + tx.slice(3).toUpperCase(),
+      goodsName: `${st?.name ?? ''} ${inv.item_name}`.trim().slice(0, 25), amount, serviceAmount: 0, vatAmount: 0,   // 교육비 면세
+      issueType, authType, authValue: self ? '0100001234' : id, subMallUsed: '0'
+    } })
+  })
+  const p = await r.json().catch(() => ({}))
+  if (p.resCd !== '0000') return json({ error: p.resMsg ?? 'issue_failed', code: p.resCd }, 400)
+  const typeLabel = self ? '자진발급' : issueType === '02' ? '지출증빙' : '소득공제'
+  await db.from('invoices').update({
+    receipt_issued: true, receipt_no: self ? '0100001234' : id, receipt_type: typeLabel, receipt_approval: String(p.approvalNo ?? ''),
+    receipt_at: new Date().toISOString(), receipt_how: org.easypay_live ? '이지페이' : '이지페이(테스트·실제 발급 아님)',
+    receipt_key: `easypay:${p.pgCno ?? ''}`, receipt_url: null
+  }).eq('id', inv.id)
+  return json({ ok: true, approval: p.approvalNo ?? null, test: !org.easypay_live })
+}
+
+/** 메시지 인증값: HmacSHA256(Key, pgCno + "|" + shopTransactionId) → 16진수 */
+async function msgAuth(pgCno: string, tx: string): Promise<string | null> {
+  const secret = Deno.env.get('EASYPAY_SECRET_KEY')
+  if (!secret) return null
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
+  const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(`${pgCno}|${tx}`))
+  return Array.from(new Uint8Array(sig), (x) => x.toString(16).padStart(2, '0')).join('')
+}
+
+/** ⑤ 현금영수증 발행 취소 (변경구분 51 = 현금영수증 단독거래 취소) */
+async function cancelReceipt(userId: string, b: { invoiceId?: unknown }): Promise<Response> {
+  if (typeof b.invoiceId !== 'string' || !/^[0-9a-f-]{36}$/.test(b.invoiceId)) return json({ error: 'bad_request' }, 400)
+  const { data: inv } = await db.from('invoices').select('*').eq('id', b.invoiceId).maybeSingle()
+  if (!inv) return json({ error: 'no_invoice' }, 404)
+  const { data: mem } = await db.from('members').select('role,org_id').eq('user_id', userId).maybeSingle()
+  if (!mem || mem.org_id !== inv.org_id || mem.role === 'parent' || mem.role === 'kiosk') return json({ error: 'not_allowed' }, 403)
+  const pgCno = String(inv.receipt_key ?? '').replace(/^easypay:/, '')
+  if (!inv.receipt_issued || !String(inv.receipt_key ?? '').startsWith('easypay:') || !pgCno) return json({ error: 'not_auto' }, 400)
+  const { data: org } = await db.from('orgs').select('easypay_mid, easypay_live').eq('id', inv.org_id).single()
+  const tx = 'kcc' + Date.now().toString(36) + rid(8)
+  const auth = await msgAuth(pgCno, tx)
+  if (!auth) return json({ error: 'no_secret' }, 500)
+  const r = await fetch(`${api(!!org?.easypay_live)}/api/trades/revise`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json; charset=utf-8' }, signal: AbortSignal.timeout(30000),
+    body: JSON.stringify({ mallId: org?.easypay_mid, shopTransactionId: tx, pgCno, reviseTypeCode: '51', cancelReqDate: kstDate(), msgAuthValue: auth, reviseMessage: '현금영수증 발행 취소' })
+  })
+  const p = await r.json().catch(() => ({}))
+  if (p.resCd !== '0000') return json({ error: p.resMsg ?? 'cancel_failed', code: p.resCd }, 400)
+  await db.from('invoices').update({ receipt_issued: false, receipt_approval: '', receipt_at: null, receipt_how: '', receipt_key: null, receipt_url: null }).eq('id', inv.id)
+  return json({ ok: true })
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS })
   const a = new URL(req.url).searchParams.get('a')
@@ -155,7 +235,10 @@ Deno.serve(async (req) => {
     const token = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '')
     const { data: u } = await db.auth.getUser(token)
     if (!u?.user) return json({ error: 'login_required' }, 401)
-    const { invoiceIds, method, back, mobile } = await req.json()
+    const body = await req.json()
+    if (body?.action === 'receipt') return await issueReceipt(u.user.id, body)
+    if (body?.action === 'receipt_cancel') return await cancelReceipt(u.user.id, body)
+    const { invoiceIds, method, back, mobile } = body
     const ids: string[] = Array.isArray(invoiceIds) ? invoiceIds.filter((x: unknown) => typeof x === 'string' && /^[0-9a-f-]{36}$/.test(x as string)) : []
     if (!ids.length || ids.length > 50 || (method !== 'card' && method !== 'vbank')) return json({ error: 'bad_request' }, 400)
 
