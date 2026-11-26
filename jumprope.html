@@ -22,6 +22,12 @@ header{color:#fff}header button{background:rgba(255,255,255,.2);color:#fff;paddi
 .tab.on{background:var(--pri);color:#fff;border-color:var(--pri)}
 .bar{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;align-items:center}
 .bar .sp{flex:1}
+.bus{display:flex;gap:6px;margin-bottom:8px;overflow-x:auto}
+.bu{white-space:nowrap;background:var(--card);color:var(--ink);border:2px solid var(--line);padding:8px 14px}
+.bu.on{background:var(--ok);color:#fff;border-color:var(--ok)}
+.bu small{opacity:.7;font-weight:400}
+.dbar{background:var(--card);border-radius:12px;padding:8px 10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+.dbar select,.dbar input{font:inherit;padding:6px;border:2px solid var(--line);border-radius:8px;color:var(--ink);background:var(--card)}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px}
 .card{background:var(--card);border-radius:16px;padding:14px;box-shadow:0 1px 3px rgba(0,0,0,.07)}
 .card h3{margin:0 0 6px;font-size:16px;display:flex;justify-content:space-between;align-items:center}
@@ -66,11 +72,17 @@ textarea{background:var(--card);color:var(--ink);width:100%;height:150px;font:in
   </div>
 </header>
 <main>
+  <div class="dbar">
+    <b>📅 측정일</b>
+    <input type="date" id="date">
+    <select id="dsel" title="지난 측정일 불러오기"></select>
+    <button onclick="$('date').value=today();render()">오늘로</button>
+  </div>
+  <div class="bus" id="bus"></div>
   <div class="bar">
-    <label>측정일 <input type="date" id="date" style="font:inherit;padding:6px;border:2px solid var(--line);border-radius:8px;color:var(--ink);background:var(--card)"></label>
-    <span class="sp"></span>
     <button onclick="showView('kid')" id="b-kid" class="pri">측정</button>
-    <button onclick="showView('sum')" id="b-sum">전체 표</button>
+    <button onclick="showView('sum')" id="b-sum">부 전체 표</button>
+    <button onclick="showView('his')" id="b-his">기록 비교</button>
   </div>
 
   <div id="view-kid">
@@ -83,6 +95,7 @@ textarea{background:var(--card);color:var(--ink);width:100%;height:150px;font:in
     <div class="tabs" id="tabs"></div>
     <div class="bar">
       <button onclick="addKid()">➕ 아이 추가</button>
+      <button onclick="bulkKids()">👥 이름 일괄 추가</button>
       <button onclick="renameKid()">✏️ 이름 수정</button>
       <button onclick="delKid()">🗑 아이 삭제</button>
       <span class="sp"></span>
@@ -92,9 +105,15 @@ textarea{background:var(--card);color:var(--ink);width:100%;height:150px;font:in
     <p class="hint">숫자를 눌러 직접 입력할 수도 있어요. 기록은 이 기기에 자동 저장됩니다.</p>
   </div>
 
+  <div id="view-his" style="display:none">
+    <div class="tabs" id="htabs"></div>
+    <div class="wrap"><table id="his"></table></div>
+    <p class="hint">날짜별로 이 아이의 기술 기록을 비교해요. 이전 측정보다 늘면 ▲로 표시돼요.</p>
+  </div>
+
   <div id="view-sum" style="display:none">
     <div class="wrap"><table id="sum"></table></div>
-    <p class="hint">표시된 값은 선택한 날짜의 기록입니다. 🏆 = 그 기술 최고 기록(전체 날짜 기준)</p>
+    <p class="hint">표시된 값은 선택한 측정일의 기록입니다. 🏆 = 그 기술 최고 기록(전체 날짜 기준)</p>
   </div>
 </main>
 
@@ -111,9 +130,12 @@ const uid=()=>Math.random().toString(36).slice(2,8);
 
 function load(){
   try{S=JSON.parse(localStorage.getItem(KEY))}catch(e){}
-  if(!S||!S.kids){S={kids:[{id:uid(),name:'아이1'}],skills:[...DEF_SKILLS],rec:{}};}
-  if(!S.kids.find(k=>k.id===S.cur))S.cur=S.kids[0]?.id;
+  if(!S||!S.kids){S={bu:1,kids:[],skills:[...DEF_SKILLS],rec:{}};}
+  for(const k of S.kids)if(!k.bu)k.bu=1;
+  if(!S.bu)S.bu=1;
+  if(!kidsOf().find(k=>k.id===S.cur))S.cur=kidsOf()[0]?.id;
 }
+const kidsOf=(b=S.bu)=>S.kids.filter(k=>k.bu===b);
 function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
 function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1800)}
 
@@ -128,10 +150,15 @@ function set(kid,sk,n){
 function best(kid,sk){let m=0;for(const d in S.rec){m=Math.max(m,((S.rec[d][kid]||{})[sk])||0)}return m}
 function bestAll(sk){let m=0;for(const d in S.rec)for(const k in S.rec[d])m=Math.max(m,S.rec[d][k][sk]||0);return m}
 
+function dates(){return Object.keys(S.rec).filter(d=>Object.values(S.rec[d]).some(r=>Object.keys(r).length)).sort().reverse()}
 function render(){
-  $('tabs').innerHTML=S.kids.map(k=>`<button class="tab ${k.id===S.cur?'on':''}" onclick="S.cur='${k.id}';save();render()">${esc(k.name)}</button>`).join('');
+  if(!kidsOf().find(k=>k.id===S.cur))S.cur=kidsOf()[0]?.id;
+  $('bus').innerHTML=[1,2,3,4,5,6].map(b=>`<button class="bu ${b===S.bu?'on':''}" onclick="S.bu=${b};save();render()">${b}부 <small>${kidsOf(b).length}명</small></button>`).join('');
+  const ds=dates();
+  $('dsel').innerHTML='<option value="">지난 측정일 ▾ ('+ds.length+'회)</option>'+ds.map(d=>`<option value="${d}" ${d===date()?'selected':''}>${d}</option>`).join('');
+  $('tabs').innerHTML=kidsOf().map(k=>`<button class="tab ${k.id===S.cur?'on':''}" onclick="S.cur='${k.id}';save();render()">${esc(k.name)}</button>`).join('');
   const kid=S.cur;
-  $('grid').innerHTML=!kid?'<p>아이를 추가해 주세요.</p>':S.skills.map((sk,i)=>{
+  $('grid').innerHTML=!kid?`<p>${S.bu}부에 아이가 없어요. ➕ 아이 추가를 눌러 주세요.</p>`:S.skills.map((sk,i)=>{
     const n=get(kid,sk),b=best(kid,sk);
     return `<div class="card"><h3>${esc(sk)}<small>최고 ${b}</small></h3>
       <input class="num" type="number" inputmode="numeric" min="0" value="${n}" onchange="setN(${i},this.value)">
@@ -144,7 +171,21 @@ function render(){
         <button class="big" style="background:var(--pri2);color:var(--bad)" onclick="setN(${i},0)">0으로</button>
       </div>
       <div class="best">${n&&n>=b?'🏆 최고 기록!':''}</div></div>`}).join('');
-  renderSum();
+  renderSum();renderHis();
+}
+function renderHis(){
+  const ks=kidsOf();
+  if(!ks.find(k=>k.id===S.cur))S.cur=ks[0]?.id;
+  $('htabs').innerHTML=ks.map(k=>`<button class="tab ${k.id===S.cur?'on':''}" onclick="S.cur='${k.id}';save();render()">${esc(k.name)}</button>`).join('');
+  const kid=S.cur;if(!kid){$('his').innerHTML='<tr><td>아이가 없어요</td></tr>';return}
+  const ds=Object.keys(S.rec).filter(d=>S.rec[d][kid]&&Object.keys(S.rec[d][kid]).length).sort();
+  let h='<tr><th>측정일</th>'+S.skills.map(s=>`<th>${esc(s)}</th>`).join('')+'</tr>';
+  if(!ds.length)h+=`<tr><td colspan="${S.skills.length+1}">아직 기록이 없어요</td></tr>`;
+  ds.forEach((d,i)=>{h+=`<tr><td>${d}</td>`+S.skills.map(s=>{
+    const n=get(kid,s,d),pv=i?get(kid,s,ds[i-1]):0;
+    const a=!n?'-':(i&&n>pv?` <small style="color:var(--ok)">▲${n-pv}</small>`:(i&&n<pv?` <small style="color:var(--bad)">▼${pv-n}</small>`:''));
+    return `<td>${n||''}${a}</td>`}).join('')+'</tr>'});
+  $('his').innerHTML=h;
 }
 function esc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
 function add(i,d){const sk=S.skills[i];set(S.cur,sk,get(S.cur,sk)+d);render()}
@@ -152,7 +193,8 @@ function setN(i,v){set(S.cur,S.skills[i],parseInt(v)||0);render()}
 
 function renderSum(){
   let h='<tr><th>이름</th>'+S.skills.map(s=>`<th>${esc(s)}</th>`).join('')+'</tr>';
-  for(const k of S.kids){
+  if(!kidsOf().length)h+=`<tr><td colspan="${S.skills.length+1}">${S.bu}부에 아이가 없어요</td></tr>`;
+  for(const k of kidsOf()){
     h+=`<tr><td>${esc(k.name)}</td>`+S.skills.map(s=>{
       const n=get(k.id,s);const t=n&&n>=bestAll(s)?' 🏆':'';
       return `<td>${n||'-'}${t}</td>`}).join('')+'</tr>';
@@ -162,7 +204,8 @@ function renderSum(){
 function showView(v){
   $('view-kid').style.display=v==='kid'?'':'none';
   $('view-sum').style.display=v==='sum'?'':'none';
-  $('b-kid').className=v==='kid'?'pri':'';$('b-sum').className=v==='sum'?'pri':'';
+  $('view-his').style.display=v==='his'?'':'none';
+  $('b-kid').className=v==='kid'?'pri':'';$('b-sum').className=v==='sum'?'pri':'';$('b-his').className=v==='his'?'pri':'';
   render();
 }
 
@@ -178,9 +221,23 @@ function confirmBox(msg,cb){
   d.innerHTML=`<h2>${esc(msg)}</h2><div style="display:flex;gap:6px;justify-content:flex-end"><button onclick="$('dlg').close()">취소</button><button class="pri" id="cfok">삭제</button></div>`;
   d.showModal();$('cfok').onclick=()=>{$('dlg').close();cb()};
 }
+function bulkKids(){
+  const d=$('dlg');
+  d.innerHTML=`<h2>${S.bu}부 이름 일괄 추가</h2><div class="col">
+    <p class="hint" style="margin:0">한 줄에 한 명씩, 또는 쉼표로 구분해서 붙여넣으세요. 이미 있는 이름은 건너뛰어요.</p>
+    <textarea id="bulkta" placeholder="김민수&#10;이서연&#10;박지호"></textarea>
+    <div style="display:flex;gap:6px;justify-content:flex-end"><button onclick="$('dlg').close()">취소</button><button class="pri" id="bulkok">추가</button></div></div>`;
+  d.showModal();
+  $('bulkok').onclick=()=>{
+    const names=[...new Set($('bulkta').value.split(/[\n,，、]+/).map(x=>x.trim()).filter(Boolean))];
+    let n=0;for(const nm of names){if(kidsOf().some(k=>k.name===nm))continue;S.kids.push({id:uid(),name:nm,bu:S.bu});n++}
+    if(!S.cur||!kidsOf().find(k=>k.id===S.cur))S.cur=kidsOf()[0]?.id;
+    save();$('dlg').close();render();toast(n+'명 추가했어요');
+  };
+}
 /* 아이 관리 */
 function addKid(){
-  askText('아이 이름','',n=>{const k={id:uid(),name:n};S.kids.push(k);S.cur=k.id;save();render()});
+  askText('아이 이름','',n=>{const k={id:uid(),name:n,bu:S.bu};S.kids.push(k);S.cur=k.id;save();render()});
 }
 function renameKid(){
   const k=S.kids.find(k=>k.id===S.cur);if(!k)return;
@@ -191,7 +248,7 @@ function delKid(){
   confirmBox(`'${k.name}'의 모든 기록을 삭제할까요?`,()=>{
   S.kids=S.kids.filter(x=>x.id!==k.id);
   for(const d in S.rec)delete S.rec[d][k.id];
-  S.cur=S.kids[0]?.id;save();render()});
+  S.cur=kidsOf()[0]?.id;save();render()});
 }
 
 /* 기술 목록 편집 */
@@ -218,18 +275,18 @@ function download(name,text,type){
 }
 function csv(allDates){
   const q=v=>'"'+String(v).replace(/"/g,'""')+'"';
-  const rows=[['날짜','이름',...S.skills]];
+  const rows=[['날짜','부','이름',...S.skills]];
   const ds=allDates?Object.keys(S.rec).sort():[date()];
   for(const d of ds)for(const k of S.kids){
     const r=S.rec[d]?.[k.id];if(!r&&!allDates)continue;if(!r)continue;
-    rows.push([d,k.name,...S.skills.map(s=>r[s]||0)]);
+    rows.push([d,k.bu+'부',k.name,...S.skills.map(s=>r[s]||0)]);
   }
-  if(rows.length===1)for(const k of S.kids)rows.push([date(),k.name,...S.skills.map(()=>0)]);
+  if(rows.length===1)for(const k of S.kids)rows.push([date(),k.bu+'부',k.name,...S.skills.map(()=>0)]);
   return '﻿'+rows.map(r=>r.map(q).join(',')).join('\r\n');
 }
 function textSummary(){
-  const l=[`🪢 줄넘기 기록 (${date()})`];
-  for(const k of S.kids){
+  const l=[`🪢 줄넘기 기록 ${S.bu}부 (${date()})`];
+  for(const k of kidsOf()){
     const parts=S.skills.map(s=>[s,get(k.id,s)]).filter(x=>x[1]).map(x=>`${x[0]} ${x[1]}개`);
     l.push(`\n■ ${k.name}\n`+(parts.length?parts.join('\n'):'기록 없음'));
   }
@@ -238,7 +295,7 @@ function textSummary(){
 function openShare(){
   const d=$('dlg');
   d.innerHTML=`<h2>저장 / 공유</h2><div class="col">
-    <button class="pri" onclick="download(fname('csv'),csv(false),'text/csv')">📊 엑셀(CSV) 저장 – 오늘 날짜</button>
+    <button class="pri" onclick="download(fname('csv'),csv(false),'text/csv')">📊 엑셀(CSV) 저장 – 선택한 측정일 (전체 부)</button>
     <button onclick="download('줄넘기기록_전체.csv',csv(true),'text/csv')">📊 엑셀(CSV) 저장 – 전체 날짜</button>
     <button onclick="download('줄넘기기록_백업.json',JSON.stringify(S,null,1),'application/json')">💾 백업 파일(JSON) 저장</button>
     <button onclick="shareText()">📤 문자/카톡으로 보내기 (텍스트)</button>
@@ -291,7 +348,7 @@ function doImport(){
       else{
         const idMap={};
         for(const k of o.kids){
-          const ex=S.kids.find(x=>x.id===k.id||x.name===k.name);
+          const ex=S.kids.find(x=>x.id===k.id||(x.name===k.name&&x.bu===(k.bu||1)));
           if(ex)idMap[k.id]=ex.id;else{S.kids.push({...k});idMap[k.id]=k.id}
         }
         for(const s of o.skills)if(!S.skills.includes(s))S.skills.push(s);
@@ -300,7 +357,7 @@ function doImport(){
           S.rec[d]=S.rec[d]||{};S.rec[d][nk]=Object.assign({},S.rec[d][nk],o.rec[d][k]);
         }
       }
-      if(!S.kids.find(k=>k.id===S.cur))S.cur=S.kids[0]?.id;
+      for(const k of S.kids)if(!k.bu)k.bu=1;if(!S.bu)S.bu=1;if(!kidsOf().find(k=>k.id===S.cur))S.cur=kidsOf()[0]?.id;
       save();$('dlg').close();render();toast('불러왔어요');
     }catch(e){toast('올바른 백업 파일이 아니에요')}
   };
@@ -333,6 +390,7 @@ function timerReset(){clearInterval(tId);tId=null;tLeft=tSet;tDraw()}
 load();
 $('date').value=today();
 $('date').onchange=render;
+$('dsel').onchange=function(){if(this.value){$('date').value=this.value;render()}};
 render();tDraw();
 </script>
 </body>
