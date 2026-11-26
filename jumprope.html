@@ -6,16 +6,17 @@
 <title>줄넘기 기록장</title>
 <style>
 :root{--bg:#f4f7fb;--card:#fff;--ink:#1d2433;--sub:#6b7488;--pri:#2f6fed;--pri2:#e8effe;--ok:#12a36b;--bad:#e5484d;--line:#e3e8f0}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#10141c;--card:#1a202c;--ink:#e8ecf4;--sub:#9aa4b8;--pri:#5b8cff;--pri2:#232c42;--line:#2a3345;--ok:#3ccf91;--bad:#ff6b70;color-scheme:dark}}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 body{margin:0;font-family:system-ui,-apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;background:var(--bg);color:var(--ink)}
 header{background:var(--pri);color:#fff;padding:14px 16px;display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
 header h1{margin:0;font-size:20px}
 header .row{display:flex;gap:6px;flex-wrap:wrap}
-main{max-width:820px;margin:0 auto;padding:12px}
+main{max-width:820px;margin:0 auto;padding:12px 16px}
 button{font:inherit;border:0;border-radius:10px;cursor:pointer;background:var(--pri2);color:var(--pri);padding:9px 13px;font-weight:600}
 button:active{transform:scale(.96)}
 button.pri{background:var(--pri);color:#fff}
-header button{background:rgba(255,255,255,.2);color:#fff;padding:7px 11px;font-size:14px}
+header{color:#fff}header button{background:rgba(255,255,255,.2);color:#fff;padding:7px 11px;font-size:14px}
 .tabs{display:flex;gap:6px;overflow-x:auto;padding:4px 0 10px}
 .tab{white-space:nowrap;background:var(--card);color:var(--ink);border:2px solid var(--line)}
 .tab.on{background:var(--pri);color:#fff;border-color:var(--pri)}
@@ -30,7 +31,7 @@ header button{background:rgba(255,255,255,.2);color:#fff;padding:7px 11px;font-s
 .btns{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
 .btns button{padding:12px 0;font-size:17px}
 .btns .big{grid-column:span 2;background:var(--pri);color:#fff;font-size:20px}
-.btns .neg{background:#fdecec;color:var(--bad)}
+.btns .neg{background:color-mix(in srgb,var(--bad) 14%,var(--card));color:var(--bad)}
 .best{font-size:12px;color:var(--ok);text-align:center;min-height:16px;margin-top:6px}
 table{width:100%;border-collapse:collapse;background:var(--card);border-radius:12px;overflow:hidden;font-size:14px}
 th,td{padding:9px 8px;text-align:center;border-bottom:1px solid var(--line)}
@@ -38,13 +39,19 @@ th{background:var(--pri2);color:var(--pri)}
 td:first-child,th:first-child{text-align:left;position:sticky;left:0;background:inherit;font-weight:700}
 td:first-child{background:var(--card)}
 .wrap{overflow-x:auto;border-radius:12px}
+.timer{background:var(--card);border-radius:16px;padding:12px;margin-bottom:10px;box-shadow:0 1px 3px rgba(0,0,0,.07);display:flex;align-items:center;gap:10px;flex-wrap:wrap;position:sticky;top:0;z-index:5}
+.timer .t{font-size:44px;font-weight:800;font-variant-numeric:tabular-nums;min-width:110px;text-align:center}
+.timer .t.run{color:var(--ok)}.timer .t.end{color:var(--bad)}
+.timer .pre{display:flex;gap:5px;flex-wrap:wrap;flex:1}
+.timer .pre button.on{background:var(--pri);color:#fff}
 .hint{color:var(--sub);font-size:13px;margin:8px 2px}
-dialog{border:0;border-radius:16px;padding:18px;max-width:420px;width:92%}
+dialog{background:var(--card);color:var(--ink);border:0;border-radius:16px;padding:18px;max-width:420px;width:92%}
 dialog::backdrop{background:rgba(0,0,0,.4)}
 dialog h2{margin:0 0 10px;font-size:18px}
 dialog .col{display:flex;flex-direction:column;gap:8px}
+input[type=text],input[type=date],input[type=number],input[type=file]{color:var(--ink);background:var(--card)}
 input[type=text]{font:inherit;padding:10px;border:2px solid var(--line);border-radius:10px;width:100%}
-textarea{width:100%;height:150px;font:inherit;padding:8px;border:2px solid var(--line);border-radius:10px}
+textarea{background:var(--card);color:var(--ink);width:100%;height:150px;font:inherit;padding:8px;border:2px solid var(--line);border-radius:10px}
 .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#222;color:#fff;padding:10px 18px;border-radius:20px;opacity:0;transition:.3s;pointer-events:none;z-index:9}
 .toast.show{opacity:1}
 @media print{header,.tabs,.bar,.hint,#view-kid{display:none!important}#view-sum{display:block!important}}
@@ -60,13 +67,19 @@ textarea{width:100%;height:150px;font:inherit;padding:8px;border:2px solid var(-
 </header>
 <main>
   <div class="bar">
-    <label>측정일 <input type="date" id="date" style="font:inherit;padding:6px;border:2px solid var(--line);border-radius:8px"></label>
+    <label>측정일 <input type="date" id="date" style="font:inherit;padding:6px;border:2px solid var(--line);border-radius:8px;color:var(--ink);background:var(--card)"></label>
     <span class="sp"></span>
     <button onclick="showView('kid')" id="b-kid" class="pri">측정</button>
     <button onclick="showView('sum')" id="b-sum">전체 표</button>
   </div>
 
   <div id="view-kid">
+    <div class="timer">
+      <div class="t" id="tdisp">00:30</div>
+      <div class="pre" id="tpre"></div>
+      <button class="pri" id="tgo" onclick="timerToggle()">▶ 시작</button>
+      <button onclick="timerReset()">↺</button>
+    </div>
     <div class="tabs" id="tabs"></div>
     <div class="bar">
       <button onclick="addKid()">➕ 아이 추가</button>
@@ -153,21 +166,32 @@ function showView(v){
   render();
 }
 
+function askText(title,def,cb){
+  const d=$('dlg');
+  d.innerHTML=`<h2>${esc(title)}</h2><form class="col" onsubmit="return false"><input type="text" id="askin" value="${esc(def)}" autocomplete="off">
+  <div style="display:flex;gap:6px;justify-content:flex-end"><button type="button" onclick="$('dlg').close()">취소</button><button type="submit" class="pri" id="askok">확인</button></div></form>`;
+  d.showModal();$('askin').select();
+  $('askok').onclick=()=>{const v=$('askin').value.trim();$('dlg').close();if(v)cb(v)};
+}
+function confirmBox(msg,cb){
+  const d=$('dlg');
+  d.innerHTML=`<h2>${esc(msg)}</h2><div style="display:flex;gap:6px;justify-content:flex-end"><button onclick="$('dlg').close()">취소</button><button class="pri" id="cfok">삭제</button></div>`;
+  d.showModal();$('cfok').onclick=()=>{$('dlg').close();cb()};
+}
 /* 아이 관리 */
 function addKid(){
-  const n=prompt('아이 이름');if(!n||!n.trim())return;
-  const k={id:uid(),name:n.trim()};S.kids.push(k);S.cur=k.id;save();render();
+  askText('아이 이름','',n=>{const k={id:uid(),name:n};S.kids.push(k);S.cur=k.id;save();render()});
 }
 function renameKid(){
   const k=S.kids.find(k=>k.id===S.cur);if(!k)return;
-  const n=prompt('이름 수정',k.name);if(!n||!n.trim())return;k.name=n.trim();save();render();
+  askText('이름 수정',k.name,n=>{k.name=n;save();render()});
 }
 function delKid(){
   const k=S.kids.find(k=>k.id===S.cur);if(!k)return;
-  if(!confirm(`'${k.name}'의 모든 기록을 삭제할까요?`))return;
+  confirmBox(`'${k.name}'의 모든 기록을 삭제할까요?`,()=>{
   S.kids=S.kids.filter(x=>x.id!==k.id);
   for(const d in S.rec)delete S.rec[d][k.id];
-  S.cur=S.kids[0]?.id;save();render();
+  S.cur=S.kids[0]?.id;save();render()});
 }
 
 /* 기술 목록 편집 */
@@ -219,11 +243,18 @@ function openShare(){
     <button onclick="download('줄넘기기록_백업.json',JSON.stringify(S,null,1),'application/json')">💾 백업 파일(JSON) 저장</button>
     <button onclick="shareText()">📤 문자/카톡으로 보내기 (텍스트)</button>
     <button onclick="copyText()">📋 텍스트 복사</button>
-    <button onclick="window.print();">🖨 표 인쇄 / PDF</button>
-    <p class="hint" style="margin:0">받는 사람이 같은 HTML 파일의 <b>불러오기</b>로 백업 파일(JSON)을 열면 기록이 그대로 옮겨져요.</p>
+    <button onclick="copyBackup()">🔑 백업 코드 복사 (다운로드가 안 될 때)</button>
+    <button onclick="copyCsv()">📋 표(CSV) 복사 → 엑셀/구글시트에 붙여넣기</button>
+    <p class="hint" style="margin:0">파일 저장이 막힌 화면에서는 복사 버튼을 쓰세요. 받는 사람은 <b>불러오기</b>에서 백업 코드를 붙여넣으면 기록이 그대로 옮겨져요.</p>
     <button onclick="$('dlg').close()">닫기</button></div>`;
   d.showModal();
 }
+async function clip(t){
+  try{await navigator.clipboard.writeText(t);toast('복사했어요')}
+  catch(e){const a=document.createElement('textarea');a.value=t;document.body.appendChild(a);a.select();try{document.execCommand('copy');toast('복사했어요')}catch(_){toast('복사 실패')}a.remove()}
+}
+const copyBackup=()=>clip(JSON.stringify(S));
+const copyCsv=()=>clip(csv(true).replace('\ufeff',''));
 async function shareText(){
   const t=textSummary();
   if(navigator.share){try{await navigator.share({title:'줄넘기 기록',text:t});return}catch(e){if(e.name==='AbortError')return}}
@@ -241,18 +272,20 @@ function openImport(){
   d.innerHTML=`<h2>불러오기</h2><div class="col">
     <p class="hint" style="margin:0">백업 파일(JSON)을 선택하세요.</p>
     <input type="file" id="file" accept=".json,application/json">
+    <p class="hint" style="margin:0">또는 복사한 백업 코드를 붙여넣기</p>
+    <textarea id="paste" placeholder="백업 코드 붙여넣기" style="height:80px"></textarea>
     <label><input type="radio" name="mode" value="merge" checked> 현재 기록에 합치기</label>
     <label><input type="radio" name="mode" value="replace"> 현재 기록을 지우고 교체</label>
     <div style="display:flex;gap:6px;justify-content:flex-end"><button onclick="$('dlg').close()">취소</button><button class="pri" onclick="doImport()">불러오기</button></div></div>`;
   d.showModal();
 }
 function doImport(){
-  const f=$('file').files[0];if(!f)return toast('파일을 선택하세요');
+  const f=$('file').files[0];const pt=$('paste').value.trim();
+  if(!f&&!pt)return toast('파일을 선택하거나 코드를 붙여넣으세요');
   const mode=document.querySelector('input[name=mode]:checked').value;
-  const r=new FileReader();
-  r.onload=()=>{
+  const run=txt=>{
     try{
-      const o=JSON.parse(r.result);
+      const o=JSON.parse(txt);
       if(!o.kids||!o.skills||!o.rec)throw 0;
       if(mode==='replace'){S=o}
       else{
@@ -271,13 +304,36 @@ function doImport(){
       save();$('dlg').close();render();toast('불러왔어요');
     }catch(e){toast('올바른 백업 파일이 아니에요')}
   };
-  r.readAsText(f);
+  if(pt)run(pt);else{const r=new FileReader();r.onload=()=>run(r.result);r.readAsText(f)}
 }
+
+/* 타이머 */
+const PRE=[10,20,30,60,120];
+let tSet=30,tLeft=30,tId=null,tEnd=0,actx;
+function fmt(n){n=Math.max(0,Math.ceil(n));return String(Math.floor(n/60)).padStart(2,'0')+':'+String(n%60).padStart(2,'0')}
+function tDraw(cls){const d=$('tdisp');d.textContent=fmt(tLeft);d.className='t '+(cls||'');
+  $('tpre').innerHTML=PRE.map(x=>`<button class="${x===tSet?'on':''}" onclick="tPick(${x})">${x>=60?x/60+'분':x+'초'}</button>`).join('')+`<button onclick="tCustom()">직접</button>`;
+  $('tgo').textContent=tId?'⏸ 멈춤':'▶ 시작'}
+function tPick(x){if(tId)return;tSet=tLeft=x;tDraw()}
+function tCustom(){if(tId)return;askText('초 단위로 입력',tSet,x=>{const v=parseInt(x);if(v>0){tSet=tLeft=v;tDraw()}})}
+function beep(n){try{actx=actx||new (window.AudioContext||window.webkitAudioContext)();
+  for(let i=0;i<n;i++){const o=actx.createOscillator(),g=actx.createGain();o.connect(g);g.connect(actx.destination);
+    o.frequency.value=880;const t=actx.currentTime+i*.25;g.gain.setValueAtTime(.3,t);g.gain.setValueAtTime(0,t+.18);o.start(t);o.stop(t+.2)}}catch(e){}}
+function timerToggle(){
+  if(tId){clearInterval(tId);tId=null;tDraw();return}
+  if(tLeft<=0)tLeft=tSet;
+  beep(0);tEnd=Date.now()+tLeft*1000;let last=Math.ceil(tLeft);
+  tId=setInterval(()=>{tLeft=(tEnd-Date.now())/1000;const c=Math.ceil(tLeft);
+    if(c<=3&&c>0&&c!==last){beep(1)}last=c;
+    if(tLeft<=0){clearInterval(tId);tId=null;tLeft=0;tDraw('end');beep(3);if(navigator.vibrate)navigator.vibrate([300,100,300]);toast('⏰ 끝!')}
+    else tDraw('run')},100);
+  tDraw('run')}
+function timerReset(){clearInterval(tId);tId=null;tLeft=tSet;tDraw()}
 
 load();
 $('date').value=today();
 $('date').onchange=render;
-render();
+render();tDraw();
 </script>
 </body>
 </html>
